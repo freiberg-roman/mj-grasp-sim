@@ -1,7 +1,5 @@
 # Assets and datasets
 
-# too many objects -> should be downloaded on demand and not managed in git -> lfs would be an option
-asset/mj-objects/*
 *.h5
 
 # Byte-compiled / optimized / DLL files
