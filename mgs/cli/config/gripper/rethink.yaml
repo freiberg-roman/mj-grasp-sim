@@ -1,0 +1,14 @@
+# Copyright (c) 2025 Robert Bosch GmbH
+# SPDX-License-Identifier: AGPL-3.0
+
+name: "RethinkGripper"
+id: "rethink"
+qpos: [0.0115, -0.0115] # open
+qpos_close: [-0.020833, 0.020833] # close
+grasp_type: "default"
+segmentation:
+  left_finger: [4, 7]
+  right_finger: [10, 13]
+  body: [0, 1, 2, 3, 5, 6, 8, 9, 11, 12]
+
+eta: 7000

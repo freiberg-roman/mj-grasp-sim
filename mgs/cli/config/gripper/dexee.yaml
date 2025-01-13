@@ -1,0 +1,10 @@
+# Copyright (c) 2025 Robert Bosch GmbH
+# SPDX-License-Identifier: AGPL-3.0
+
+name: "DexeeGripper"
+id: "dexee"
+qpos: [0, -1.3963, 0, 0, 0, -1.3963, 0, 0, 0, -1.3963, 0, 0]
+qpos_close: [0,-0.0325,0,0.00143,0.0655,-0.0369,0,0,-0.0654,-0.0337,0,0]
+grasp_type: "default"
+
+eta: 15000

@@ -1,0 +1,82 @@
+# Copyright (c) 2025 Robert Bosch GmbH
+# Author: Roman Freiberg
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published
+# by the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+import numpy as np
+from scipy.spatial.transform import Rotation
+
+from mgs.util.geo.convert import quat_xyzw_to_wxyz
+
+
+def rnd_direction():
+    theta = 2 * np.pi * np.random.rand()
+    phi = np.arccos(2 * np.random.rand() - 1)
+
+    x = np.sin(phi) * np.cos(theta)
+    y = np.sin(phi) * np.sin(theta)
+    z = np.cos(phi)
+
+    return np.array([x, y, z])
+
+
+def rnd_camera_pose(radius=2.0):
+    direction = rnd_direction()
+    direction /= np.linalg.norm(direction)
+    position = -radius * direction
+
+    up = np.array([0, 0, 1])
+    right = np.cross(direction, up)
+    up = np.cross(right, direction)
+
+    transformation = np.eye(3)
+    transformation[:3, 0] = direction
+    transformation[:3, 1] = -right
+    transformation[:3, 2] = up
+
+    scipy_quat = Rotation.from_matrix(transformation).as_quat()
+    mujoco_quat = quat_xyzw_to_wxyz(scipy_quat)
+
+    return position, mujoco_quat
+
+
+def rnd_direction_restricted(phi=0.125 * np.pi):
+    theta = 2 * np.pi * np.random.rand()
+    phi = np.pi - np.random.random() * phi
+
+    x = np.sin(phi) * np.cos(theta)
+    y = np.sin(phi) * np.sin(theta)
+    z = np.cos(phi)
+
+    return np.array([x, y, z])
+
+
+def rnd_camera_pose_restricted(radius=2.0, phi=0.125 * np.pi):
+    direction = rnd_direction_restricted(phi=phi)
+    direction /= np.linalg.norm(direction)
+    position = -radius * direction
+
+    up = np.array([0, 0, 1])
+    right = np.cross(direction, up)
+    up = np.cross(right, direction)
+
+    transformation = np.eye(3)
+    transformation[:3, 0] = direction
+    transformation[:3, 1] = -right
+    transformation[:3, 2] = up
+
+    scipy_quat = Rotation.from_matrix(transformation).as_quat()
+    mujoco_quat = quat_xyzw_to_wxyz(scipy_quat)
+
+    return position, mujoco_quat

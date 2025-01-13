@@ -1,0 +1,15 @@
+# Copyright (c) 2025 Robert Bosch GmbH
+# SPDX-License-Identifier: AGPL-3.0
+
+defaults:
+  - _self_
+  - gripper: google
+
+qpos: ${gripper.qpos}
+file_id: "open"
+num_images: 10
+debug: false
+
+hydra:
+  job:
+    chdir: False

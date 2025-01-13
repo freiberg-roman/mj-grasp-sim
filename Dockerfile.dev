@@ -1,0 +1,48 @@
+# Copyright (c) 2025 Robert Bosch GmbH
+# Author: Roman Freiberg
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published
+# by the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+FROM python:3.11-slim
+
+# Sets up main app directory
+WORKDIR /app
+
+# Install system dependencies and development tools
+RUN apt-get update && apt-get install -y \
+    locales \
+    libglew-dev \
+    libglib2.0-0 \
+    git \
+    vim \
+    && rm -rf /var/lib/apt/lists/* \
+    && localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8 \
+    && mkdir -p /out /stats /in
+
+# Set environment variables
+ENV LANG=en_US.utf8
+ENV MGS_OUTPUT_DIR=/out
+ENV MGS_INPUT_DIR=/in
+
+# Copy and install Python dependencies
+COPY ./requirements.txt .
+RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN pip install --upgrade pip && pip install matplotlib pillow
+
+# Create a non-root user and switch to it
+RUN useradd -ms /bin/bash mgs
+USER mgs
+
+# Set default command to open an interactive shell
+CMD ["/bin/bash"]
