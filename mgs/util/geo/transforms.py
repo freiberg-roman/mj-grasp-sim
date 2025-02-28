@@ -14,8 +14,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from typing import Self
 from dataclasses import dataclass
+from typing import Self
 
 import numpy as np
 from scipy.spatial.transform import Rotation as R
@@ -122,7 +122,7 @@ class SE3Pose:
 
     @classmethod
     def randn_se3(cls, num) -> Self:
-        scipy_quat = R.random(num).as_quat(canonical =False)
+        scipy_quat = R.random(num).as_quat(canonical=False)
         quat = quat_xyzw_to_wxyz(scipy_quat)
         pos = np.random.randn(num, 3)
         return cls(pos, quat, "wxyz")

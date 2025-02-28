@@ -21,6 +21,7 @@ from mgs.gripper.allegro import GripperAllegro
 from mgs.gripper.base import MjShakableOpenCloseGripper
 from mgs.gripper.dexee import GripperDexee
 from mgs.gripper.google import GripperGoogle
+from mgs.gripper.leap import GripperLeap
 from mgs.gripper.panda import GripperPanda
 from mgs.gripper.rethink import GripperRethink
 from mgs.gripper.robotiq2f85 import GripperRobotiq2f85
@@ -60,5 +61,8 @@ def get_gripper(cfg: DictConfig, default_pose=None) -> MjShakableOpenCloseGrippe
 
     if cfg.name == "AllegroGripper":
         return GripperAllegro(pose)
+
+    if cfg.name == "LeapGripper":
+        return GripperLeap(pose)
 
     raise ValueError(f"Unknown gripper: {cfg.name}")
