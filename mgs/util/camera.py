@@ -14,6 +14,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import math
+
 import numpy as np
 from scipy.spatial.transform import Rotation
 
@@ -80,3 +82,27 @@ def rnd_camera_pose_restricted(radius=2.0, phi=0.125 * np.pi):
     mujoco_quat = quat_xyzw_to_wxyz(scipy_quat)
 
     return position, mujoco_quat
+
+
+def fibonacci_sphere(total_num, i):
+    """
+    Returns the (x, y, z) coordinates of the i-th point from a total of total_num points,
+    distributed approximately evenly on the surface of a unit sphere using the Fibonacci method.
+
+    Parameters:
+      total_num (int): Total number of points.
+      i (int): The index of the desired point (0 <= i < total_num).
+
+    Returns:
+      tuple: (x, y, z) coordinates on the sphere.
+    """
+    golden_angle = math.pi * (3 - math.sqrt(5))
+    z = 1 - (i / float(total_num - 1)) * 2
+    radius = math.sqrt(1 - z * z)
+    theta = golden_angle * i
+
+    # Convert polar coordinates to Cartesian coordinates
+    x = math.cos(theta) * radius
+    y = math.sin(theta) * radius
+
+    return np.array([x, y, z])

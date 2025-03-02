@@ -20,7 +20,7 @@ import numpy as np
 
 from mgs.env.base import MjScanEnv
 from mgs.gripper.base import MjScannable, MjScannableGripper
-from mgs.util.camera import rnd_camera_pose_restricted
+from mgs.util.camera import fibonacci_sphere, rnd_camera_pose_restricted
 from mgs.util.geo.transforms import SE3Pose
 
 XML = r"""
@@ -90,8 +90,8 @@ class GripperScanEnv(MjScanEnv):
         pose_processed = pose @ b2c
         self.gripper.set_pose(self, pose_processed)
 
-    def update_camera_settings(self):
-        rnd_pos, _ = rnd_camera_pose_restricted(radius=0.5, phi=np.pi * 0.65)
+    def update_camera_settings(self, num_images, i):
+        rnd_pos = fibonacci_sphere(total_num=num_images, i=i)
         jnt_adr_start = self.model.jnt("camera:joint").qposadr[0].item()
         self.data.qpos[jnt_adr_start : jnt_adr_start + 3] = rnd_pos
         mujoco.mj_forward(self.model, self.data)  # type: ignore

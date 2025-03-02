@@ -413,7 +413,23 @@ class GripperLeap(MjShakableOpenCloseGripper, MjScannable):
         return (xml, ASSETS)
 
     def get_actuator_joint_names(self) -> List[str]:
-        return [ "if_mcp", "if_rot", "if_pip", "if_dip", "mf_mcp", "mf_rot", "mf_pip", "mf_dip", "rf_mcp", "rf_rot", "rf_pip", "rf_dip", "th_cmc", "th_axl", "th_mcp", "th_ipl",
+        return [
+            "if_mcp",
+            "if_rot",
+            "if_pip",
+            "if_dip",
+            "mf_mcp",
+            "mf_rot",
+            "mf_pip",
+            "mf_dip",
+            "rf_mcp",
+            "rf_rot",
+            "rf_pip",
+            "rf_dip",
+            "th_cmc",
+            "th_axl",
+            "th_mcp",
+            "th_ipl",
         ]
 
     def get_freejoint_idxs(self, sim: MjSimulation) -> List[int]:
