@@ -97,41 +97,8 @@ class MjScanEnv(MjSimulation):
             # segmentation
             self.renderer.enable_segmentation_rendering()
             segmentation = self.renderer.render()
-            from PIL import Image
-
-            binary_image = np.logical_or.reduce(
-                [segmentation[..., 0] == i for i in range(30, 31)]
-            )
-            Image.fromarray((binary_image).astype(np.uint8) * 255).show()
-            labels = segmentation.reshape(-1, 2)
-            unique_labels = np.unique(labels, axis=0)
-            unique_labels = [
-                label for label in unique_labels if label[0] != -1
-            ]  # drop background
-
-            # Map each label to the model element name
-            segment_mapping = {}
-            for obj_id, obj_type in unique_labels:
-                # Determine object type and get name
-                if obj_type == mujoco.mjtObj.mjOBJ_GEOM:
-                    name = self.model.geom(obj_id).name
-                    segment_mapping[(obj_id, "geom")] = name
-                elif obj_type == mujoco.mjtObj.mjOBJ_BODY:
-                    name = self.model.body(obj_id).name
-                    segment_mapping[(obj_id, "body")] = name
-                elif obj_type == mujoco.mjtObj.mjOBJ_SITE:
-                    name = self.model.site(obj_id).name
-                    segment_mapping[(obj_id, "site")] = name
-                elif obj_type == mujoco.mjtObj.mjOBJ_CAMERA:
-                    name = self.model.cam(obj_id).name
-                    segment_mapping[(obj_id, "camera")] = name
-                # ... handle other object types as needed
-            # Print the mapping result
-            for key, val in segment_mapping.items():
-                obj_id, obj_type = key
-                print(f"Segment ID {obj_id} ({obj_type}) -> Model name: {val}")
-
             self.renderer.disable_segmentation_rendering()
+
             segmentation = np.copy(segmentation[..., 0])
             segmentation = np.expand_dims(segmentation, axis=0)
             segmentations.append(segmentation)

@@ -94,15 +94,19 @@ def fibonacci_sphere(total_num, i):
       i (int): The index of the desired point (0 <= i < total_num).
 
     Returns:
-      tuple: (x, y, z) coordinates on the sphere.
+      tuple: (x, y, z) coordinates on the unit sphere.
     """
-    golden_angle = math.pi * (3 - math.sqrt(5))
-    z = 1 - (i / float(total_num - 1)) * 2
-    radius = math.sqrt(1 - z * z)
+    # Golden angle in radians
+    golden_angle = math.pi * (3.0 - math.sqrt(5.0))
+
+    # Normalize i into range [0, total_num - 1], mapping to y in [-1, +1]
+    y = 1 - (2.0 * i / (total_num - 1))
+    radius = math.sqrt(max(0.0, 1.0 - y * y))
+
+    # Compute the angle around the sphere
     theta = golden_angle * i
 
-    # Convert polar coordinates to Cartesian coordinates
     x = math.cos(theta) * radius
-    y = math.sin(theta) * radius
+    z = math.sin(theta) * radius
 
     return np.array([x, y, z])

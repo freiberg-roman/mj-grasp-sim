@@ -372,12 +372,7 @@ class GripperLeap(MjShakableOpenCloseGripper, MjScannable):
         super().__init__(pose, "palm")
 
     def base_to_contact_transform(self) -> SE3Pose:
-        theta = -np.pi / 2.0
-        rot_offset = SE3Pose(np.array([0, 0, 0]), np.array([np.cos(theta / 2.0), 0.0, np.sin(theta / 2.0), 0.0]), type="wxyz")  # type: ignore
-        offset = rot_offset @ SE3Pose(
-            np.array([-0.08, 0.0, 0.01]), np.array([1.0, 0, 0, 0]), type="wxyz"
-        )
-        return SE3Pose(offset.pos, np.array([np.cos(theta / 2.0), 0.0, np.sin(theta / 2.0), 0.0]), type="wxyz")  # type: ignore
+        return SE3Pose(np.array([0.0, 0.0, 0.0]), np.array([1.0, 0.0, 0.0, 0.0]), type="wxyz")  # type: ignore
 
     def open_gripper(self, sim: MjSimulation):
         return
