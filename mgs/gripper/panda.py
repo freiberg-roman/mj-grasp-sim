@@ -167,8 +167,10 @@ class GripperPanda(MjShakableOpenCloseGripper, MjScannable):
         return (xml, ASSETS)
 
     def base_to_contact_transform(self) -> SE3Pose:
-        pos = np.array([0, 0, -0.102])
-        quat = np.array([0.707106781, 0.0, 0.0, 0.707106781])
+        # pos = np.array([0, 0, -0.102])
+        # quat = np.array([0.707106781, 0.0, 0.0, 0.707106781])
+        pos = np.array([0, 0, 0.])
+        quat = np.array([1.0, 0.0, 0.0, 0.0])
         return SE3Pose(pos, quat, type="wxyz")
 
     def open_gripper(self, sim: MjSimulation):

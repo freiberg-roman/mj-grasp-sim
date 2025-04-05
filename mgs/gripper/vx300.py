@@ -76,6 +76,12 @@ XML = """
         <joint axis="1 0 0" range="-3.14158 3.14158" damping="0.78"/>
         <position ctrlrange="-3.14158 3.14158" kp="7"/>
       </default>
+      <default class="finger_left">
+        <position ctrlrange="0.021 0.057" kp="300"/>
+      </default>
+      <default class="finger_right">
+        <position ctrlrange="-0.057 -0.021 " kp="300"/>
+      </default>
       <default class="finger">
         <joint type="slide" armature="0.251" damping="10"/>
         <position ctrlrange="0.021 0.057" kp="300"/>
@@ -167,12 +173,12 @@ XML = """
   </worldbody>
 
   <equality>
-    <joint joint1="left_finger" joint2="right_finger" polycoef="0 -1 0 0 0"/>
     <weld body1="mocap" body2="gripper_link"/>
   </equality>
 
   <actuator>
-    <position class="finger" name="gripper" joint="left_finger"/>
+    <position class="finger_left" name="act_left" joint="left_finger"/>
+    <position class="finger_right" name="act_right" joint="right_finger"/>
   </actuator>
 """
 
@@ -203,21 +209,24 @@ class GripperVX300(MjShakableOpenCloseGripper, MjScannable):
         return (xml, ASSETS)
 
     def base_to_contact_transform(self) -> SE3Pose:
-        rot_around_y = SE3Pose(
-            np.array([0, 0, 0]),
-            np.array([0.707106781, 0, -0.707106781, 0]),
-            type="wxyz",
-        )
-        rot_around_z = SE3Pose(
-            np.array([0, 0, 0]),
-            np.array([0.707106781, 0, 0.0, 0.707106781]),
-            type="wxyz",
-        )
+        # rot_around_y = SE3Pose(
+        #     np.array([0, 0, 0]),
+        #     np.array([0.707106781, 0, -0.707106781, 0]),
+        #     type="wxyz",
+        # )
+        # rot_around_z = SE3Pose(
+        #     np.array([0, 0, 0]),
+        #     np.array([0.707106781, 0, 0.0, 0.707106781]),
+        #     type="wxyz",
+        # )
 
-        rot = rot_around_z @ rot_around_y
-        rot.pos = np.array([0, 0, -0.12])
+        # rot = rot_around_z @ rot_around_y
+        # rot.pos = np.array([0, 0, -0.12])
+        # return rot
 
-        return rot
+        pos = np.array([0, 0, 0.])
+        quat = np.array([1.0, 0.0, 0.0, 0.0])
+        return SE3Pose(pos, quat, type="wxyz")
 
     def open_gripper(self, sim: MjSimulation):
         sim.data.qpos[7:9] = np.array([0.057, -0.057])

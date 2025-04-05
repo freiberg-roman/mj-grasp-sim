@@ -126,16 +126,9 @@ XML = """
 
   <worldbody>
     <body name="mocap" mocap="true" pos="{position}" quat="{quaternion}"/>
-    <body name="rh_forearm" childclass="right_hand" pos="{position}" quat="{quaternion}">
-      <freejoint name="freejoint"/>
-      <inertial mass="3" pos="0 0 0.09" diaginertia="0.0138 0.0138 0.00744"/>
-      <geom class="plastic_visual" mesh="forearm_0" material="gray"/>
-      <geom class="plastic_visual" mesh="forearm_1"/>
-      <geom class="plastic_collision" type="mesh" mesh="forearm_collision" friction="4.0"/>
-      <geom class="plastic_collision" size="0.035 0.035 0.035" pos="0.01 0.0 0.181" quat="0.380188 0.924909 0 0" friction="4.0" type="box"/>
-      <body name="rh_wrist" pos="0.01 0 0.21301" quat="1 0 0 1">
+      <body name="rh_wrist" pos="{position}" quat="{quaternion}">
+        <freejoint name="freejoint"/>
         <inertial mass="0.1" pos="0 0 0.029" quat="0.5 0.5 0.5 0.5" diaginertia="6.4e-05 4.38e-05 3.5e-05"/>
-        <joint class="wrist_y" name="rh_WRJ2"/>
         <geom class="plastic_visual" mesh="wrist" material="metallic"/>
         <geom size="0.0135 0.015" quat="0.499998 0.5 0.5 -0.500002" type="cylinder" class="plastic_collision" friction="4.0"/>
         <geom size="0.011 0.005" pos="-0.026 0 0.034" quat="1 0 1 0" type="cylinder" class="plastic_collision" friction="4.0"/>
@@ -146,7 +139,6 @@ XML = """
           class="plastic_collision" friction="4.0"/>
         <body name="rh_palm" pos="0 0 0.034">
           <inertial mass="0.3" pos="0 0 0.035" quat="1 0 0 1" diaginertia="0.0005287 0.0003581 0.000191"/>
-          <joint class="wrist_x" name="rh_WRJ1"/>
           <site name="grasp_site" pos="0 -.035 0.09" group="4"/>
           <geom class="plastic_visual" mesh="palm"/>
           <geom size="0.031 0.0035 0.049" pos="0.011 0.0085 0.038" type="box" class="plastic_collision" friction="4.0"/>
@@ -297,11 +289,9 @@ XML = """
           </body>
         </body>
       </body>
-    </body>
   </worldbody>
 
   <contact>
-    <exclude body1="rh_wrist" body2="rh_forearm"/>
     <exclude body1="rh_thproximal" body2="rh_thmiddle"/>
   </contact>
 
@@ -325,8 +315,6 @@ XML = """
   </tendon>
 
   <actuator>
-    <position name="rh_A_WRJ2" joint="rh_WRJ2" class="wrist_y"/>
-    <position name="rh_A_WRJ1" joint="rh_WRJ1" class="wrist_x"/>
     <position name="rh_A_THJ5" joint="rh_THJ5" class="thbase"/>
     <position name="rh_A_THJ4" joint="rh_THJ4" class="thproximal"/>
     <position name="rh_A_THJ3" joint="rh_THJ3" class="thhub"/>
@@ -347,7 +335,7 @@ XML = """
     <position name="rh_A_LFJ0" tendon="rh_LFJ0" class="middle_distal"/>
   </actuator>
   <equality>
-    <weld body1="mocap" body2="rh_forearm"/>
+    <weld body1="mocap" body2="rh_wrist"/>
   </equality>
 """
 
@@ -355,223 +343,6 @@ XML = """
 class GripperShadowRight(MjShakableOpenCloseGripper, MjScannable):
     def __init__(self, pose: SE3Pose, grasp_type=None):
         super().__init__(pose, "rh_wrist")
-
-        self.type = grasp_type
-        self.close_poses = {
-            "two_finger_pinch": np.array(
-                [
-                    0.0188,
-                    -0.2686,
-                    -0.3013,
-                    0.9774,
-                    1.045,
-                    0.1665,
-                    0.1255,
-                    0.165,
-                    0.3459,
-                    0.0005741,
-                    -0.1349,
-                    0.4096,
-                    0.04252,
-                    0.03161,
-                    0.1938,
-                    -0.2039,
-                    0.05253,
-                    0.4297,
-                    0.009526,
-                    0.03082,
-                    1.08,
-                    0.1604,
-                    0.5839,
-                    0.3069,
-                ]
-            ),
-            "three_finger_pinch": np.array(
-                [
-                    -0.01977,
-                    -0.5255,
-                    -0.3464,
-                    1.253,
-                    0.7836,
-                    -0.001106,
-                    0.01103,
-                    1.475,
-                    0.6181,
-                    0.0155,
-                    -0.2083,
-                    0.3328,
-                    0.07129,
-                    0.02873,
-                    0.1829,
-                    -0.2676,
-                    0.05465,
-                    0.3892,
-                    0.008468,
-                    0.07708,
-                    1.21,
-                    0.2023,
-                    0.6614,
-                    0.0102,
-                ]
-            ),
-            "grasp_hard": np.array(
-                [
-                    -0.06713,
-                    -0.5377,
-                    -0.3099,
-                    1.128,
-                    0.5067,
-                    0.001659,
-                    -0.1352,
-                    0.8652,
-                    0.93,
-                    0.01263,
-                    0.1724,
-                    1.165,
-                    0.2726,
-                    0.034,
-                    0.3116,
-                    -0.354,
-                    0.9553,
-                    0.7928,
-                    0.01958,
-                    0.05755,
-                    1.182,
-                    0.1947,
-                    0.5578,
-                    0.2482,
-                ]
-            ),
-            "full_grasp": np.array(
-                [
-                    0,
-                    0,
-                    0,
-                    1.571,
-                    1.571,
-                    1.571,
-                    0,
-                    1.571,
-                    1.571,
-                    1.571,
-                    0,
-                    1.571,
-                    1.571,
-                    1.571,
-                    0,
-                    0,
-                    1.571,
-                    1.571,
-                    1.571,
-                    0.17,
-                    1.2,
-                    0,
-                    0.61,
-                    0.52,
-                ]
-            ),
-        }
-        self.open_poses = {
-            "two_finger_pinch": np.array(
-                [
-                    0.0188,
-                    -0.2686,
-                    -0.3013,
-                    -0.262,
-                    1.045,
-                    0.1665,
-                    0.1255,
-                    0.165,
-                    0.3459,
-                    0.0005741,
-                    -0.1349,
-                    0.4096,
-                    0.04252,
-                    0.03161,
-                    0.1938,
-                    -0.2039,
-                    0.05253,
-                    0.4297,
-                    0.009526,
-                    -0.5,
-                    1.08,
-                    0.1604,
-                    0.5839,
-                    0.3069,
-                ]
-            ),
-            "three_finger_pinch": np.array(
-                [
-                    -0.01977,
-                    -0.5255,
-                    -0.3464,
-                    0.645,
-                    0.7836,
-                    -0.001106,
-                    0.01103,
-                    0.81,
-                    0.6181,
-                    0.0155,
-                    -0.2083,
-                    0.3328,
-                    0.07129,
-                    0.02873,
-                    0.1829,
-                    -0.2676,
-                    0.05465,
-                    0.3892,
-                    0.008468,
-                    -0.7,
-                    1.21,
-                    0.2023,
-                    0.6614,
-                    0.0102,
-                ]
-            ),
-            "grasp_hard": np.array(
-                [
-                    -0.03896,
-                    -0.5694,
-                    -0.3497,
-                    0.1074,
-                    0.1424,
-                    -0.008296,
-                    -0.05406,
-                    -0.07509,
-                    0.4658,
-                    0.01033,
-                    -0.1062,
-                    0.2738,
-                    0.001251,
-                    0.02586,
-                    0.1551,
-                    -0.3593,
-                    0.1445,
-                    -0.00691,
-                    -0.001588,
-                    -0.1413,
-                    0.8383,
-                    0.199,
-                    0.4945,
-                    0.1291,
-                ]
-            ),
-            "full_grasp": np.array([0.0] * 24),
-        }
-
-        self.offset = {
-            "two_finger_pinch": np.array([-0.065, -0.035, -0.346]),
-            "three_finger_pinch": np.array([-0.05, -0.02, -0.35]),
-            "grasp_hard": np.array([-0.02, -0.0, -0.36]),
-            "full_grasp": np.array([-0.02, -0.0, -0.36]),
-        }
-
-        self.rotation = {
-            "two_finger_pinch": np.pi * (5.2 / 3.0),
-            "three_finger_pinch": np.pi * (5.2 / 3.0),
-            "grasp_hard": np.pi * (5.2 / 3.0),
-            "full_grasp": np.pi * (5.2 / 3.0),
-        }
 
     def to_xml(self) -> Tuple[str, Dict[str, Any]]:
         pos = "{} {} {}".format(self.pos[0], self.pos[1], self.pos[2])
@@ -595,17 +366,15 @@ class GripperShadowRight(MjShakableOpenCloseGripper, MjScannable):
         return (xml, ASSETS)
 
     def base_to_contact_transform(self) -> SE3Pose:
-        theta = self.rotation[self.type]  # type: ignore
-        rot_offset = SE3Pose(np.array([0, 0, 0]), np.array([np.cos(theta / 2.0), 0.0, np.sin(theta / 2.0), 0.0]), type="wxyz")  # type: ignore
-        offset = rot_offset @ SE3Pose(
-            self.offset[self.type], np.array([1.0, 0, 0, 0]), type="wxyz"
-        )
-        return SE3Pose(offset.pos, np.array([np.cos(theta / 2.0), 0.0, np.sin(theta / 2.0), 0.0]), type="wxyz")  # type: ignore
+        pos = np.array([0, 0, 0.])
+        quat = np.array([1.0, 0.0, 0.0, 0.0])
+        return SE3Pose(pos, quat, type="wxyz")
 
     def open_gripper(self, sim: MjSimulation):
         gripper_idxs = sim.get_joint_idxs(self.get_actuator_joint_names())
-        sim.set_qpos(np.array(self.open_poses[self.type]), gripper_idxs)  # type: ignore
-        sim.data.ctrl[:] = self._qpos_to_qacc(np.copy(self.open_poses[self.type]))  # type: ignore
+        open_pose = np.zeros(shape=(22,))
+        sim.set_qpos(open_pose, gripper_idxs)  # type: ignore
+        sim.data.ctrl[:] = self._qpos_to_qacc(np.copy(open_pose))  # type: ignore
 
     def close_gripper_at(self, sim: MjSimulation, pose: SE3Pose):
         sim.data.mocap_pos = pose.pos
@@ -621,8 +390,6 @@ class GripperShadowRight(MjShakableOpenCloseGripper, MjScannable):
         self,
     ) -> List[str]:
         return [
-            "rh_WRJ2",
-            "rh_WRJ1",
             "rh_FFJ4",
             "rh_FFJ3",
             "rh_FFJ2",
@@ -648,15 +415,14 @@ class GripperShadowRight(MjShakableOpenCloseGripper, MjScannable):
         ]
 
     def _qpos_to_qacc(self, qpos):
-        acc = np.zeros((20,))
-        acc[:2] = qpos[:2]
-        acc[2:7] = qpos[-5:]
-        acc[7:9] = qpos[2:4]
-        acc[9] = qpos[4] + qpos[5]
-        acc[10:12] = qpos[6:8]
-        acc[12] = qpos[8] + qpos[9]
-        acc[13:15] = qpos[10:12]
-        acc[15] = qpos[12] + qpos[13]
-        acc[16:19] = qpos[14:17]
-        acc[19] = qpos[17] + qpos[18]
+        acc = np.zeros((18,))
+        acc[:5] = qpos[-5:]
+        acc[5:7] = qpos[0:2]
+        acc[7] = qpos[2] + qpos[3]
+        acc[8:10] = qpos[4:6]
+        acc[10] = qpos[6] + qpos[7]
+        acc[11:13] = qpos[8:10]
+        acc[13] = qpos[10] + qpos[11]
+        acc[14:17] = qpos[12:15]
+        acc[17] = qpos[15] + qpos[16]
         return acc

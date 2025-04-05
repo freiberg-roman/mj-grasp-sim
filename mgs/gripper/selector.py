@@ -51,7 +51,7 @@ def get_gripper(cfg: DictConfig, default_pose=None) -> MjShakableOpenCloseGrippe
         return GripperRobotiq2f85(pose)
 
     if cfg.name == "ShadowHand":
-        return GripperShadowRight(pose, grasp_type=cfg.grasp_type)
+        return GripperShadowRight(pose)
 
     if cfg.name == "VXGripper":
         return GripperVX300(pose)

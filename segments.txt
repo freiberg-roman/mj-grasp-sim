@@ -1,0 +1,116 @@
+Segment ID 0 (geom) -> Model name: palm_visual
+Segment ID 1 (geom) -> Model name: palm_collision_1
+Segment ID 2 (geom) -> Model name: palm_collision_2
+Segment ID 3 (geom) -> Model name: palm_collision_3
+Segment ID 4 (geom) -> Model name: palm_collision_4
+Segment ID 5 (geom) -> Model name: palm_collision_5
+Segment ID 6 (geom) -> Model name: palm_collision_6
+Segment ID 7 (geom) -> Model name: palm_collision_7
+Segment ID 8 (geom) -> Model name: palm_collision_8
+Segment ID 9 (geom) -> Model name: palm_collision_9
+Segment ID 10 (geom) -> Model name: palm_collision_10
+Segment ID 11 (geom) -> Model name: if_bs_visual
+Segment ID 12 (geom) -> Model name: if_bs_collision_1
+Segment ID 13 (geom) -> Model name: if_bs_collision_2
+Segment ID 14 (geom) -> Model name: if_bs_collision_3
+Segment ID 15 (geom) -> Model name: if_bs_collision_4
+Segment ID 16 (geom) -> Model name: if_bs_collision_5
+Segment ID 17 (geom) -> Model name: if_bs_collision_6
+Segment ID 18 (geom) -> Model name: if_px_visual
+Segment ID 19 (geom) -> Model name: if_px_collision
+Segment ID 20 (geom) -> Model name: if_md_visual
+Segment ID 21 (geom) -> Model name: if_md_collision_1
+Segment ID 22 (geom) -> Model name: if_md_collision_2
+Segment ID 23 (geom) -> Model name: if_md_collision_3
+Segment ID 24 (geom) -> Model name: if_md_collision_4
+Segment ID 25 (geom) -> Model name: if_md_collision_5
+Segment ID 26 (geom) -> Model name: if_ds_visual
+Segment ID 27 (geom) -> Model name: if_ds_collision_1
+Segment ID 28 (geom) -> Model name: if_ds_collision_2
+Segment ID 29 (geom) -> Model name: if_ds_collision_3
+Segment ID 30 (geom) -> Model name: if_tip
+Segment ID 31 (geom) -> Model name: mf_bs_visual
+Segment ID 32 (geom) -> Model name: mf_bs_collision_1
+Segment ID 33 (geom) -> Model name: mf_bs_collision_2
+Segment ID 34 (geom) -> Model name: mf_bs_collision_3
+Segment ID 38 (geom) -> Model name: mf_px_visual
+Segment ID 40 (geom) -> Model name: mf_md_visual
+Segment ID 42 (geom) -> Model name: mf_md_collision_2
+Segment ID 44 (geom) -> Model name: mf_md_collision_4
+Segment ID 45 (geom) -> Model name: mf_md_collision_5
+Segment ID 49 (geom) -> Model name: mf_ds_collision_3
+Segment ID 50 (geom) -> Model name: mf_tip
+Segment ID 51 (geom) -> Model name: rf_bs_visual
+Segment ID 52 (geom) -> Model name: rf_bs_collision_1
+Segment ID 53 (geom) -> Model name: rf_bs_collision_2
+Segment ID 54 (geom) -> Model name: rf_bs_collision_3
+Segment ID 64 (geom) -> Model name: rf_md_collision_4
+Segment ID 65 (geom) -> Model name: rf_md_collision_5
+Segment ID 70 (geom) -> Model name: rf_tip
+Segment ID 71 (geom) -> Model name: th_mp_visual
+Segment ID 72 (geom) -> Model name: th_mp_collision
+Segment ID 73 (geom) -> Model name: th_bs_visual
+Segment ID 74 (geom) -> Model name: th_bs_collision_1
+Segment ID 75 (geom) -> Model name: th_bs_collision_2
+Segment ID 76 (geom) -> Model name: th_bs_collision_3
+Segment ID 77 (geom) -> Model name: th_px_visual
+Segment ID 78 (geom) -> Model name: th_px_collision_1
+Segment ID 79 (geom) -> Model name: th_px_collision_2
+Segment ID 80 (geom) -> Model name: th_px_collision_3
+Segment ID 81 (geom) -> Model name: th_px_collision_4
+Segment ID 82 (geom) -> Model name: th_px_collision_5
+Segment ID 83 (geom) -> Model name: th_ds_visual
+Segment ID 84 (geom) -> Model name: th_ds_collision_1
+Segment ID 85 (geom) -> Model name: th_ds_collision_2
+Segment ID 86 (geom) -> Model name: th_ds_collision_3
+
+
+# shadow
+Segment ID 0 (geom) -> Model name: 
+Segment ID 6 (geom) -> Model name: 
+Segment ID 15 (geom) -> Model name: 
+Segment ID 17 (geom) -> Model name: 
+Segment ID 19 (geom) -> Model name: 
+Segment ID 21 (geom) -> Model name: 
+Segment ID 23 (geom) -> Model name: 
+Segment ID 25 (geom) -> Model name: 
+Segment ID 27 (geom) -> Model name: 
+Segment ID 29 (geom) -> Model name: 
+Segment ID 31 (geom) -> Model name: 
+Segment ID 33 (geom) -> Model name: 
+Segment ID 35 (geom) -> Model name: 
+Segment ID 37 (geom) -> Model name: 
+Segment ID 39 (geom) -> Model name: 
+Segment ID 41 (geom) -> Model name: 
+Segment ID 43 (geom) -> Model name: 
+Segment ID 45 (geom) -> Model name: 
+Segment ID 47 (geom) -> Model name: 
+Segment ID 50 (geom) -> Model name: 
+Segment ID 53 (geom) -> Model name: 
+Segment ID 56 (geom) -> Model name: 
+
+
+
+            segmentation = np.copy(segmentation[..., :])
+            segmentation = np.expand_dims(segmentation, axis=0)
+            segmentations.append(segmentation)
+
+        imgs = np.concatenate(imgs, axis=0)
+        depth = np.expand_dims(np.concatenate(depths, axis=0), axis=-1)
+        rgbd = np.concatenate([imgs, depth], axis=-1)
+        segmentation = np.concatenate(segmentations, axis=0)
+        extrinsics = np.stack(extrinsics, axis=0)
+
+        labels = segmentation.reshape(-1,2)
+        unique_labels = np.unique(labels, axis=0)
+        unique_labels = [label for label in unique_labels if label[0] != -1]
+        segment_mapping = {}
+        for obj_id, obj_type in unique_labels:
+            # Determine object type and get name
+            if obj_type == mujoco.mjtObj.mjOBJ_GEOM:
+                name = self.model.geom(obj_id).name
+                segment_mapping[(obj_id, 'geom')] = name
+
+        for key, val in segment_mapping.items():
+            obj_id, obj_type = key
+            print(f"Segment ID {obj_id} ({obj_type}) -> Model name: {val}")
