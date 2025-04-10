@@ -1,3 +1,4 @@
+import optax
 import os
 import json
 import numpy as np
@@ -60,7 +61,93 @@ def forward_kinematic_point_transform(
     return transformed_point
 
 
-def visualize_gripper_and_contacts():
+@nnx.jit
+def update(
+    graph,
+    state,
+    gripper_local_contact_positions,
+    target_surface_positions,
+):
+    kin, optimizer, theta = nnx.merge(graph, state)
+
+    def loss_fn(current_theta):
+        transformed_points = nnx.vmap(
+            forward_kinematic_point_transform, in_axes=(None, 0, 0, None)
+        )(
+            current_theta.theta.value,
+            gripper_local_contact_positions,
+            jnp.array([3, 7, 11, 15], dtype=jnp.int32),
+            kin,
+        )
+        loss = jnp.mean((target_surface_positions - transformed_points) ** 2)
+        return loss
+
+    loss, grad = nnx.value_and_grad(loss_fn)(theta)
+    optimizer.update(grad)
+
+    return loss, nnx.state((kin, optimizer, theta))
+
+
+class JointState(nnx.Module):
+    def __init__(self, init_theta):
+        self.theta = nnx.Param(init_theta)
+
+
+class Trainer:
+    def __init__(self, kin):
+        self.kin = kin
+        tx = optax.adamw(0.005)
+        self.theta = JointState(
+            init_theta=jnp.array(
+                [
+                    1.57 / 2.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.57 / 2.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.57 / 2.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.57 / 2.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                ],
+                dtype=jnp.float32,
+            )
+        )
+        self.optimizer = nnx.Optimizer(self.theta, tx)
+        self.train_graph, self.train_state = nnx.split(
+            (self.kin, self.optimizer, self.theta)
+        )
+
+    def train_step(self, input, target: jnp.ndarray):
+        loss, self.train_state = update(
+            self.train_graph, self.train_state, input, target
+        )
+        return loss
+
+
+def example_optimization():
+    kin = LeapHandKinematicsModel()
+    trainer = Trainer(kin)
+
+    local_positions = jnp.zeros(shape=(4, 3), dtype=jnp.float32)
+    target_positions = jnp.zeros(shape=(4, 3), dtype=jnp.float32)
+    target_positions = target_positions.at[:, 2].set(-0.08)
+
+    for _ in range(1000):
+        loss = trainer.train_step(local_positions, target_positions)
+        print("Loss:", loss)
+    _, _, theta = nnx.merge(trainer.train_graph, trainer.train_state)
+    return theta.theta.value
+
+
+def visualize_gripper_and_contacts(theta):
     """Loads and visualizes the gripper point cloud and transformed fingertip contact points."""
 
     # 1. Load Gripper Point Cloud Data
@@ -82,27 +169,6 @@ def visualize_gripper_and_contacts():
     print("  Loaded contact candidates.")
 
     kin_model = LeapHandKinematicsModel()  # Initialize our JAX model
-    theta = jnp.array(
-        [
-            1.57 / 2.0,
-            0.0,
-            0.0,
-            0.0,
-            1.57 / 2.0,
-            0.0,
-            0.0,
-            0.0,
-            1.57 / 2.0,
-            0.0,
-            0.0,
-            0.0,
-            1.57 / 2.0,
-            0.0,
-            0.0,
-            0.0,
-        ],
-        dtype=jnp.float32,
-    )
     segmentations = np.stack(
         [
             raw["if_mcp"][random_idx],
@@ -209,7 +275,9 @@ if __name__ == "__main__":
                 transform_points_jax,
             )
 
-            visualize_gripper_and_contacts()
+            # visualize_gripper_and_contacts()
+            theta = example_optimization()
+            visualize_gripper_and_contacts(theta)
         except ImportError as e:
             print(f"ERROR: Failed to import necessary JAX operations: {e}")
             print("Ensure mgs/operations.py exists and is accessible.")
