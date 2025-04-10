@@ -36,8 +36,6 @@ def get_gripper(cfg: DictConfig, default_pose=None) -> MjShakableOpenCloseGrippe
         if default_pose is None
         else default_pose
     )
-    assert isinstance(pose, SE3Pose)
-
     if cfg.name == "GoogleGripper":
         return GripperGoogle(pose)
 

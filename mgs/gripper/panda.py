@@ -142,55 +142,160 @@ XML = """
 
 
 class GripperPanda(MjShakableOpenCloseGripper, MjScannable):
+    MIN_WIDTH_TARGET = 0.0  # Target closed width before clamping
+    MAX_WIDTH = 0.08  # Max open width (8cm)
+    MIN_WIDTH_CLAMP = 0.003  # Minimum physical width clamp (3mm)
+
+    # Joint limits from XML
+    Q1_RANGE = [0.0, 0.04]
+    Q2_RANGE = [-0.04, 0.0]
+
     def __init__(self, pose: SE3Pose):
-        super().__init__(pose, "hand")
+        super().__init__(pose, "hand")  # "hand" is the base body name in the Panda XML
 
     def to_xml(self) -> Tuple[str, Dict[str, Any]]:
+        """
+        Generates the MuJoCo XML snippet and assets for the Panda gripper.
+        Note: This assumes the global XML variable is defined containing the template.
+        """
+        # This part remains the same, it just formats the XML string
         pos = "{} {} {}".format(self.pos[0], self.pos[1], self.pos[2])
         quat = "{} {} {} {}".format(
             self.quat[0], self.quat[1], self.quat[2], self.quat[3]
         )
-        xml = XML.format(
-            **{
-                "position": pos,
-                "quaternion": quat,
-            }
-        )
+        # We need the XML string from the outer scope or defined here
+        # For now, assume it's accessible as `XML`
+        try:
+            formatted_xml = XML.format(position=pos, quaternion=quat)
+        except NameError:
+            raise RuntimeError(
+                "Panda XML template string 'XML' is not defined in the scope of GripperPanda.to_xml"
+            )
 
         ASSETS = dict()
         base_path = os.path.join(ASSET_PATH, "panda")
+        if not os.path.isdir(base_path):
+            raise FileNotFoundError(
+                f"Panda asset directory not found at {base_path}")
         for file_name in os.listdir(base_path):
             path = os.path.join(base_path, file_name)
-            with open(path, "rb") as f:
-                ASSETS[file_name] = f.read()
+            if os.path.isfile(path):  # Ensure it's a file
+                try:
+                    with open(path, "rb") as f:
+                        ASSETS[file_name] = f.read()
+                except IOError as e:
+                    print(f"Warning: Could not read asset file {path}: {e}")
 
-        return (xml, ASSETS)
+        return (formatted_xml, ASSETS)
 
     def base_to_contact_transform(self) -> SE3Pose:
-        # pos = np.array([0, 0, -0.102])
-        # quat = np.array([0.707106781, 0.0, 0.0, 0.707106781])
-        pos = np.array([0, 0, 0.])
-        quat = np.array([1.0, 0.0, 0.0, 0.0])
+        pos = np.array([0, 0, -0.102])
+        quat = np.array([0.707106781, 0.0, 0.0, 0.707106781])
         return SE3Pose(pos, quat, type="wxyz")
 
     def open_gripper(self, sim: MjSimulation):
-        idxs = sim.get_joint_idxs(self.get_actuator_joint_names())
-        sim.set_qpos(np.array([0.04, 0.0]), idxs)
-        sim.data.ctrl[:] = np.array([0.04, 0.0])
+        """Opens the gripper to its maximum width (8cm) based on original command."""
+        # Use the command known to open the gripper fully
+        target_q1 = self.Q1_RANGE[1]  # 0.04
+        target_q2 = self.Q2_RANGE[1]  # 0.0
+        qpos_indices = sim.get_joint_idxs(self.get_actuator_joint_names())
+
+        # Set qpos and ctrl
+        sim.data.qpos[qpos_indices[0]] = target_q1
+        sim.data.qpos[qpos_indices[1]] = target_q2
+        sim.data.ctrl[0] = target_q1
+        sim.data.ctrl[1] = target_q2
+        mujoco.mj_forward(sim.model, sim.data)
+
+    def close_gripper(self, sim: MjSimulation):
+        """Commands the gripper to its fully closed state based on original command."""
+        # Use the command known to close the gripper fully
+        target_q1 = self.Q1_RANGE[0]  # 0.0
+        target_q2 = self.Q2_RANGE[0]  # -0.04
+        sim.data.ctrl[0] = target_q1
+        sim.data.ctrl[1] = target_q2
+
+    def set_gripper_width(self, sim: MjSimulation, width: float):
+        """
+        Sets the gripper fingers to a state corresponding to a target width.
+
+        Args:
+            sim: The MjSimulation instance.
+            width: The desired distance between the fingertips in meters.
+                   The width will be clamped between MIN_WIDTH_CLAMP (3mm)
+                   and MAX_WIDTH (8cm).
+        """
+        # Clamp the desired width
+        clamped_width = np.clip(width, self.MIN_WIDTH_CLAMP, self.MAX_WIDTH)
+
+        # Calculate target joint positions using the derived linear mapping
+        # q1 = W / 2
+        # q2 = -0.04 + W / 2
+        target_q1 = clamped_width / 2.0
+        target_q2 = -0.04 + (clamped_width / 2.0)
+
+        # Double-check calculated targets against joint limits (should be okay due to width clamping)
+        target_q1 = np.clip(target_q1, self.Q1_RANGE[0], self.Q1_RANGE[1])
+        target_q2 = np.clip(target_q2, self.Q2_RANGE[0], self.Q2_RANGE[1])
+
+        # Get the qpos indices for the finger joints
+        qpos_indices = sim.get_joint_idxs(self.get_actuator_joint_names())
+
+        if len(qpos_indices) != 2:
+            raise RuntimeError(
+                f"Could not find both Panda finger joint indices. Found: {qpos_indices}"
+            )
+
+        # Set the desired joint positions directly in qpos
+        sim.data.qpos[qpos_indices[0]] = target_q1
+        sim.data.qpos[qpos_indices[1]] = target_q2
+
+        # Set the control signal to match the target qpos for the position actuators
+        sim.data.ctrl[0] = target_q1
+        sim.data.ctrl[1] = target_q2
+
+        # Update simulation state after changing qpos
+        mujoco.mj_forward(sim.model, sim.data)
 
     def close_gripper_at(self, sim: MjSimulation, pose: SE3Pose):
-        sim.data.mocap_pos = np.copy(pose.pos)
-        sim.data.mocap_quat = np.copy(pose.quat)
-        sim.data.ctrl[:] = np.array([0.0, -0.04])
-        mujoco.mj_step(sim.model, sim.data, 3000)  # type: ignore
+        """
+        Sets the gripper base pose and commands the fingers to close fully.
+        Uses the original known control signals for closing.
+        """
+        # Set the base pose using mocap
+        # Use [:] to modify in place if sim.data.mocap_pos is a view
+        sim.data.mocap_pos[:] = np.copy(pose.pos)
+        sim.data.mocap_quat[:] = np.copy(pose.quat)
+
+        # Command the fingers to close using the original known control values
+        close_ctrl_signal = np.array([0.0, -0.04])
+        sim.data.ctrl[:] = close_ctrl_signal  # Set ctrl for both actuators
+
+        # Step the simulation to allow the controller to close the fingers
+        # Keep existing step count
+        mujoco.mj_step(sim.model, sim.data, nstep=3000)
 
     def get_actuator_joint_names(self) -> List[str]:
+        """Returns the names of the joints directly controlled by actuators."""
         return ["finger_joint1", "finger_joint2"]
 
     def get_freejoint_idxs(self, sim: MjSimulation) -> List[int]:
-        start_idx = sim.get_joint_idxs(["freejoint"])[0]
+        """Gets the qpos indices for the 6-DOF free joint of the base ('hand')."""
+        # Ensure the freejoint name matches the one in the XML ('freejoint')
+        try:
+            start_idx = sim.get_joint_idxs(["freejoint"])[0]
+        except IndexError:
+            raise RuntimeError(
+                "Could not find 'freejoint' qpos index for the Panda base."
+            )
+        # Free joint has 7 qpos values (3 pos, 4 quat)
         return list(range(start_idx, start_idx + 7))
 
     def get_render_options(self):
-        options = mujoco.MjvOption()  # type: ignore
+        """Returns default visualization options."""
+        options = mujoco.MjvOption()
         return options
+
+    def _clamp_width(self, width: np.array) -> float:
+        """Clamps the desired width to the gripper's operational range."""
+        return np.clip(width + 0.025, self.MIN_WIDTH_CLAMP, self.MAX_WIDTH)
