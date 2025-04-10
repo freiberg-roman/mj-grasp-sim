@@ -3,7 +3,12 @@ import jax.numpy as jnp
 from typing import List
 from flax import nnx
 from abc import ABC
-from mgs.operations import *
+from mgs.operations import (
+    se3_raw_mupltiply,
+    quaternion_from_axis_angle,
+    quaternion_apply_jax,
+    similarity_transform,
+)
 
 # This constant is required for jax GPU acceleration
 MAX_DOF = 22
@@ -148,34 +153,35 @@ class LeapHandKinematicsModel(nnx.Module, KinematicsModel):
         )
 
 
-@nnx.jit
-def push_to_link_frame(
-    theta: jnp.ndarray, gripper_kinematics: KinematicsModel, joint_origins: jnp.ndarray
+@jax.jit
+def masked_feature_pcd_transform(
+    points: jnp.ndarray,
+    Ts: jnp.ndarray,
+    mask: jnp.ndarray,
 ):
-    if joint_origins is None:
-        # for actual joint origins
-        joint_origins = jnp.zeros(shape=(gripper_kinematics.num_dofs, 3))
+    q, t = Ts[..., :4], Ts[..., 4:]
+    points = jnp.where(mask[..., None], quaternion_apply_jax(q, points) + t, points)
+    return points
 
-    for chain_idx, chain in enumerate(gripper_kinematics.kinematics_graph):
+
+@nnx.jit
+def kinematic_pcd_transform(
+    points: jnp.ndarray,
+    theta: jnp.ndarray,
+    segmentation: jnp.ndarray,
+    gripper_kinematics: KinematicsModel,
+):
+    for chain in gripper_kinematics.kinematics_graph:
         current_transform = gripper_kinematics.base_to_contact
         current_delta = jnp.array([1.0, 0, 0, 0, 0, 0, 0])
 
-        for i, index in enumerate(chain):
-            # First update the current transform to get to this joint
+        for index in chain:
             current_transform = se3_raw_mupltiply(
                 se3_raw_mupltiply(current_transform, current_delta),
                 gripper_kinematics.kinematics_transforms[index],
             )
-
-            # Calculate the transform for the next joint
-            # TODO: bug here
             joint_theta = theta[index]
             translation = gripper_kinematics.joint_transforms[index][:3] * joint_theta
-
-            # Extract the current position (translation part of the transform)
-            joint_origins = joint_origins.at[index].set(
-                current_transform[4:7] + translation
-            )
 
             joint_axis = gripper_kinematics.joint_transforms[index][3:]
             axis_norm = jnp.linalg.norm(joint_axis)
@@ -186,5 +192,8 @@ def push_to_link_frame(
             )
 
             current_delta = jnp.concatenate([rotation_quat, translation], axis=-1)
+            mask = segmentation[index]
+            Ts = similarity_transform(current_transform, current_delta)
+            points = masked_feature_pcd_transform(points, Ts, mask)
 
-    return joint_origins
+    return points
