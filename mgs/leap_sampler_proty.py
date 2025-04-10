@@ -6,6 +6,13 @@ import plotly.graph_objects as go
 from flax import nnx
 import jax.numpy as jnp
 
+from mgs.operations import (
+    quaternion_from_axis_angle,
+    se3_raw_mupltiply,
+    transform_points_jax,
+    matrix_to_rotation_6d,
+    rotation_6d_to_matrix,
+)
 from mgs.leap_kin import LeapHandKinematicsModel, kinematic_pcd_transform
 
 
@@ -53,11 +60,9 @@ def forward_kinematic_point_transform(
             se3_raw_mupltiply(T_world_parent, T_parent_jointStatic),
             T_jointStatic_jointDynamic,
         )
-        all_link_transforms = all_link_transforms.at[index + 1].set(
-            T_world_joint)
+        all_link_transforms = all_link_transforms.at[index + 1].set(T_world_joint)
     target_transform_world = all_link_transforms[joint_idx + 1]
-    transformed_point = transform_points_jax(
-        local_point, target_transform_world)
+    transformed_point = transform_points_jax(local_point, target_transform_world)
     return transformed_point
 
 
@@ -68,33 +73,62 @@ def update(
     gripper_local_contact_positions,
     target_surface_positions,
 ):
-    kin, optimizer, theta = nnx.merge(graph, state)
+    kin, optimizer, params = nnx.merge(graph, state)
+    surface_points, surface_normals = target_surface_positions
 
     def loss_fn(current_theta):
+        joint_pose = jnp.zeros_like(gripper_local_contact_positions)
+        contact_position_normal = jnp.ones_like(
+            gripper_local_contact_positions
+        ) * jnp.array([[1.0, 0, 0]])
+        all_combined = jnp.concatenate(
+            [gripper_local_contact_positions, contact_position_normal, joint_pose]
+        )
         transformed_points = nnx.vmap(
             forward_kinematic_point_transform, in_axes=(None, 0, 0, None)
         )(
             current_theta.theta.value,
-            gripper_local_contact_positions,
-            jnp.array([3, 7, 11, 15], dtype=jnp.int32),
+            all_combined,
+            jnp.array([3, 7, 11, 15, 3, 7, 11, 15, 3, 7, 11, 15], dtype=jnp.int32),
             kin,
         )
-        loss = jnp.mean((target_surface_positions - transformed_points) ** 2)
+        transformed_points = (
+            jnp.einsum(
+                "ij,...j->...i",
+                rotation_6d_to_matrix(current_theta.rot.value),
+                transformed_points,
+            )
+            + current_theta.translation.value
+        )
+        normals = transformed_points[4:8] - transformed_points[8:]
+
+        cos_sim = jnp.sum(normals * surface_normals, axis=-1)
+        loss_cos = jnp.mean(0.5 * (1 - cos_sim))
+        loss = (
+            jnp.mean((surface_points - transformed_points[:4]) ** 2) + 0.001 * loss_cos
+        )
         return loss
 
-    loss, grad = nnx.value_and_grad(loss_fn)(theta)
+    loss, grad = nnx.value_and_grad(loss_fn)(params)
     optimizer.update(grad)
+    params.theta.value = jnp.clip(
+        params.theta.value,
+        min=kin.joint_ranges[..., 0],
+        max=kin.joint_ranges[..., 1],
+    )
 
-    return loss, nnx.state((kin, optimizer, theta))
+    return loss, nnx.state((kin, optimizer, params))
 
 
 class JointState(nnx.Module):
-    def __init__(self, init_theta):
+    def __init__(self, init_theta, init_rotation, init_translation):
         self.theta = nnx.Param(init_theta)
+        self.translation = nnx.Param(init_translation)
+        self.rot = nnx.Param(matrix_to_rotation_6d(init_rotation))
 
 
 class Trainer:
-    def __init__(self, kin):
+    def __init__(self, kin, init_rotation, init_translation):
         self.kin = kin
         tx = optax.adamw(0.005)
         self.theta = JointState(
@@ -118,7 +152,9 @@ class Trainer:
                     0.0,
                 ],
                 dtype=jnp.float32,
-            )
+            ),
+            init_rotation=init_rotation,
+            init_translation=init_translation,
         )
         self.optimizer = nnx.Optimizer(self.theta, tx)
         self.train_graph, self.train_state = nnx.split(
@@ -134,15 +170,19 @@ class Trainer:
 
 def example_optimization():
     kin = LeapHandKinematicsModel()
-    trainer = Trainer(kin)
+    trainer = Trainer(
+        kin=kin,
+        init_rotation=jnp.eye(3),
+        init_translation=jnp.zeros(shape=(3,)),
+    )
 
     local_positions = jnp.zeros(shape=(4, 3), dtype=jnp.float32)
     target_positions = jnp.zeros(shape=(4, 3), dtype=jnp.float32)
     target_positions = target_positions.at[:, 2].set(-0.08)
 
-    for _ in range(1000):
-        loss = trainer.train_step(local_positions, target_positions)
-        print("Loss:", loss)
+    # for _ in range(1000):
+    #     loss = trainer.train_step(local_positions, target_positions)
+    #     print("Loss:", loss)
     _, _, theta = nnx.merge(trainer.train_graph, trainer.train_state)
     return theta.theta.value
 
@@ -199,6 +239,7 @@ def visualize_gripper_and_contacts(theta):
 
     # 4. Transform Contact Points
     transformed_contacts_list = []
+    transformed_contacts_vec = []
     for link_name, link_joint_index in FINGERTIP_INFO.items():
         local_points = contact_candidates_data.get(link_name, [])
         if local_points:
@@ -208,6 +249,11 @@ def visualize_gripper_and_contacts(theta):
                 first_contact_point_local = local_points_jax[
                     0:1, :
                 ]  # Keep batch dim (1, 3)
+                forward_vector = jnp.array([[0.03, 0, 0]])
+                null_vec = jnp.array([[0.0, 0, 0]])
+                first_contact_point_local = jnp.concatenate(
+                    [first_contact_point_local, forward_vector, null_vec]
+                )
                 transformed_point = forward_kinematic_point_transform(
                     theta,
                     first_contact_point_local,
@@ -216,8 +262,9 @@ def visualize_gripper_and_contacts(theta):
                 )
 
                 transformed_contacts_list.append(
-                    np.array(transformed_point[0])
+                    np.array(transformed_point[1] - transformed_point[2])
                 )  # Append NumPy array (3,)
+                transformed_contacts_vec.append(np.array(transformed_point[1]))
 
     contact_points_np = np.array(
         transformed_contacts_list

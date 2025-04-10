@@ -145,3 +145,19 @@ def rotation_translation_vector_field(
         )  # right finger
 
     return rotation_field, translation_field
+
+
+def rotation_6d_to_matrix(d6: jnp.ndarray) -> jnp.ndarray:
+    a1 = d6[..., :3]
+    a2 = d6[..., 3:]
+    b1 = a1 / jnp.linalg.norm(a1, axis=-1, keepdims=True)
+    dot_product = jnp.sum(b1 * a2, axis=-1, keepdims=True)
+    b2 = a2 - dot_product * b1
+    b2 = b2 / jnp.linalg.norm(b2, axis=-1, keepdims=True)
+    b3 = jnp.cross(b1, b2)
+    return jnp.stack((b1, b2, b3), axis=-2)
+
+
+def matrix_to_rotation_6d(matrix: jnp.ndarray) -> jnp.ndarray:
+    batch_shape = matrix.shape[:-2]
+    return matrix[..., :2, :].reshape(*batch_shape, 6)
