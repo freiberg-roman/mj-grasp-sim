@@ -70,14 +70,19 @@ class GravitylessObjectGrasping(MjSimulation):
         self.data = mujoco.MjData(self.model)  # type: ignore
         mujoco.mj_forward(self.model, self.data)  # type: ignore
 
-    def idle_grasp(self, pose: SE3Pose):
+    def idle_grasp(self, pose: SE3Pose, joints: np.ndarray):
         # (Implementation remains the same)
         mujoco.mj_resetData(self.model, self.data)
         b2c = self.gripper.base_to_contact_transform()
         pose_processed = pose @ b2c
+        gripper_joint_idxs = self.get_joint_idxs(
+            self.gripper.get_actuator_joint_names()
+        )
+        self.set_qpos(joints, gripper_joint_idxs)
         self.gripper.set_pose(self, pose_processed)
-        self.gripper.open_gripper(self)
+
         mujoco.mj_forward(self.model, self.data)
+        self.gripper.close_gripper_at(self, pose_processed)
         with mujoco.viewer.launch_passive(self.model, self.data) as viewer:
             while True:
                 viewer.sync()
@@ -124,74 +129,37 @@ class GravitylessObjectGrasping(MjSimulation):
         self,
         poses: SE3Pose,
         joints: np.ndarray,
-        nstep_lift: int = 5000,  # Steps for lifting simulation
+        nstep_lift: int = 3000,  # Steps for lifting simulation
         lift_dist: float = 0.1,  # Distance to lift
         shake_steps: int = 500,  # Steps per shake direction
         shake_dist: float = 0.02,  # Distance to shake side-to-side
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Evaluates the stability of pre-filtered (collision-free) grasp poses by
-        simulating the closing, lifting, and shaking process. Assumes gripper
-        implements `set_joints(sim, joints)` and `close_gripper(sim)`.
-
-        Args:
-            poses: An SE3Pose object containing N collision-free grasp poses.
-            joints: An np.ndarray of shape [N, num_dofs] specifying the initial joint angles
-                    for each grasp pose *before* closing.
-            nstep_lift: Number of simulation steps to run for lifting.
-            lift_dist: Vertical distance to lift the object during stability check.
-            shake_steps: Number of simulation steps for each shaking motion.
-            shake_dist: Horizontal distance for shaking motion.
-
-
-        Returns:
-            Tuple[np.ndarray, np.ndarray, np.ndarray]:
-            - results_arr (np.ndarray): Boolean array [N], True if grasp passed all checks.
-            - pos_drift_arr (np.ndarray): Positional drift [N] during closing (meters). NaN if grasp failed early.
-            - rot_drift_arr (np.ndarray): Rotational drift [N] during closing (degrees). NaN if grasp failed early.
-        """
-        # --- Input Validation ---
         if len(poses) != len(joints):
             raise ValueError(
                 f"Number of poses ({len(poses)}) must match number of joint configurations ({len(joints)})."
             )
-        # We trust that the joints array has the correct dimension as it comes from the sampler/previous step
-        # Add a check if necessary based on gripper properties if available, e.g., self.gripper.num_dofs
-
-        # --- Initialization ---
         results: List[bool] = []
         positional_drift: List[float] = []
         rotational_drift: List[float] = []
         num_grasps = len(poses)
-        # Gripper joint indices are handled within the assumed set_joints method
-
-        # --- Main Evaluation Loop ---
+        gripper_joint_idxs = self.get_joint_idxs(
+            self.gripper.get_actuator_joint_names()
+        )
+        
         for i in range(num_grasps):
-            # print(f"Evaluating stability for grasp {i + 1}/{num_grasps}...") # Optional debug print
             mujoco.mj_resetData(self.model, self.data)
             mujoco.mj_forward(self.model, self.data)
 
             b2c = self.gripper.base_to_contact_transform()
             pose_processed = poses[i] @ b2c
-
-            # 1. Set initial pose and joint configuration (already checked for collision)
-            # Assume self.gripper has a method to set joints directly
-            self.gripper.set_joints(self, joints[i])
-            # Sets mocap and base qpos
+            self.set_qpos(joints[i], gripper_joint_idxs)
             self.gripper.set_pose(self, pose_processed)
             mujoco.mj_forward(self.model, self.data)  # Update geom positions
-
-            # 2. Store object pose before closing
             obj_pose_before_close = self.get_object_transform(self.obj.name)
-
-            # 3. Close the gripper using the assumed generic method
-            # This method should handle setting controls and stepping internally
-            self.gripper.close_gripper(
-                self
-            )  # Assumes this method runs the close sequence
-
-            # 4. Check for contact *after* closing
-            if not self.check_contact():
+            self.gripper.close_gripper_at(
+                self, pose_processed
+            )
+            if not self.check_contact_with_object():
                 # print("  Failed: No contact after closing.") # Optional debug print
                 results.append(False)
                 positional_drift.append(np.nan)
@@ -239,14 +207,14 @@ class GravitylessObjectGrasping(MjSimulation):
                 self.data.mocap_pos[0, 2] = current_z
                 mujoco.mj_step(self.model, self.data)
                 # Check contact periodically during lift
-                if t > 0 and t % 100 == 0 and not self.check_contact():
+                if t > 0 and t % 100 == 0 and not self.check_contact_with_object():
                     shake_passed = False
                     # print(f"  Failed: Lost contact during lift at step {t}.") # Optional debug
                     break
             if not shake_passed:
                 results.append(False)
                 continue
-            if not self.check_contact():  # Final check after lift
+            if not self.check_contact_with_object():  # Final check after lift
                 # print("  Failed: Lost contact after lift.") # Optional debug
                 results.append(False)
                 continue
@@ -268,7 +236,7 @@ class GravitylessObjectGrasping(MjSimulation):
                     target_pos_back - start_pos_shake
                 ) * (t / shake_steps)
                 mujoco.mj_step(self.model, self.data)
-            if not self.check_contact():
+            if not self.check_contact_with_object():
                 shake_passed = False
                 # print("  Failed: Lost contact after move back.") # Optional debug
 
@@ -282,7 +250,7 @@ class GravitylessObjectGrasping(MjSimulation):
                         target_pos_right - start_pos_shake
                     ) * (t / shake_steps)
                     mujoco.mj_step(self.model, self.data)
-                if not self.check_contact():
+                if not self.check_contact_with_object():
                     shake_passed = False
                     # print("  Failed: Lost contact after move right.") # Optional debug
 
@@ -298,16 +266,11 @@ class GravitylessObjectGrasping(MjSimulation):
                         target_pos_left - start_pos_shake
                     ) * (t / (shake_steps * 2))
                     mujoco.mj_step(self.model, self.data)
-                if not self.check_contact():
+                if not self.check_contact_with_object():
                     shake_passed = False
                     # print("  Failed: Lost contact after move left.") # Optional debug
 
             results.append(shake_passed)
-            # Optional debug prints for pass/fail and drift
-            # if shake_passed:
-            #     print(f"  Passed stability checks. Drift: pos={pos_drift:.4f}m, rot={rot_drift_deg:.2f}deg")
-            # else:
-            #      print(f"  Failed stability checks. Drift: pos={pos_drift:.4f}m, rot={rot_drift_deg:.2f}deg")
 
         # --- Process and Return Results ---
         results_arr = np.array(results)
@@ -323,7 +286,7 @@ class GravitylessObjectGrasping(MjSimulation):
         # final_stable_mask = results_arr & pos_drift_ok & rot_drift_ok
         # return final_stable_mask, pos_drift_arr, rot_drift_arr
 
-        return results_arr, pos_drift_arr, rot_drift_arr
+        return results_arr# , pos_drift_arr, rot_drift_arr
 
     def get_object_transform(self, object_name: str):
         # (Implementation remains the same)
@@ -339,17 +302,19 @@ class GravitylessObjectGrasping(MjSimulation):
         )
 
     def check_contact(self):
-        # (Implementation remains the same)
-        table_id = self.model.geom("geom:ground").id
-        for i in range(self.data.ncon):  # Iterate through active contacts
-            contact = self.data.contact[i]
-            geom1_is_obj = contact.geom1 < table_id
-            geom2_is_obj = contact.geom2 < table_id
-            geom1_is_gripper = contact.geom1 > table_id
-            geom2_is_gripper = contact.geom2 > table_id
+        return self.data.ncon != 0
 
-            if (geom1_is_obj and geom2_is_gripper) or (
-                geom1_is_gripper and geom2_is_obj
+    def check_contact_with_object(self):
+        """
+        As the geoms are ordered accordingly to the XML. We can simply
+        check for contacts between obj geoms and gripper geoms by ids
+        relative to the table (which is inbetween obj and gripper by construction)
+        """
+        table_id = self.model.geom("geom:ground").id
+        for contact_pairs in self.data.contact.geom:
+            if (
+                (contact_pairs[0] < table_id and contact_pairs[1] > table_id)
+                or (contact_pairs[0] > table_id and contact_pairs[1] < table_id)
             ):
-                return True  # Contact between object and gripper found
+                return True
         return False

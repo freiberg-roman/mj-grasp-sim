@@ -23,6 +23,12 @@ def main(cfg: DictConfig):
 
     obj = get_object(all_object_ids[0])
     cbd = ContactBasedDiff(obj) # required to not trigger recompilation for each object
+    all_kins = {
+            "ShadowHand": ShadowKinematicsModel(),
+            "LeapGripper": LeapHandKinematicsModel(),
+            "PandaGripper": None,
+            "VXGripper": None,
+        }
 
     for object_id in tqdm(all_object_ids):
         obj = get_object(object_id)
@@ -31,12 +37,7 @@ def main(cfg: DictConfig):
             if cfg.gripper.name in ["ShadowHand", "LeapGripper"]
             else AntipodalGraspGenerator(obj)
         )
-        kin_model = {
-            "ShadowHand": ShadowKinematicsModel(),
-            "LeapGripper": LeapHandKinematicsModel(),
-            "PandaGripper": None,
-            "VXGripper": None,
-        }[cfg.gripper.name]
+        kin_model = all_kins[cfg.gripper.name]
 
         output_dir = os.getenv("MGS_OUTPUT_DIR")
         if output_dir is None:

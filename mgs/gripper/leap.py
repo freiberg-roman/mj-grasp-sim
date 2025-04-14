@@ -80,8 +80,8 @@ XML = """
     </default>
     <default class="thumb_mcp">
       <joint pos="0 0 0" axis="0 0 -1"
-        limited="true" range="-1.2, 1.9" />
-      <position ctrlrange="-1.2, 1.9" />
+        limited="true" range="-1.2 1.9" />
+      <position ctrlrange="-1.2 1.9" />
     </default>
     <default class="thumb_ipl">
       <joint pos="0 0 0" axis="0 0 -1"
@@ -370,6 +370,26 @@ XML = """
 class GripperLeap(MjShakableOpenCloseGripper, MjScannable):
     def __init__(self, pose: SE3Pose):
         super().__init__(pose, "palm")
+        self.close_pose = np.array(
+            [
+                1.2,
+                0.0,
+                1.5,
+                1.1,
+                1.2,
+                0.0,
+                1.5,
+                1.1,
+                1.2,
+                0.0,
+                1.5,
+                1.1,
+                1.95,
+                0.5,
+                0.55,
+                0.35,
+            ]
+        )
 
     def base_to_contact_transform(self) -> SE3Pose:
         # type: ignore
@@ -384,10 +404,9 @@ class GripperLeap(MjShakableOpenCloseGripper, MjScannable):
         # sim.data.ctrl[:] = np.copy(self.open_pose)
 
     def close_gripper_at(self, sim: MjSimulation, pose: SE3Pose):
-        return
-        # self.set_pose(sim, pose)
-        # sim.data.ctrl[:] = np.copy(self.close_pose)
-        # mujoco.mj_step(sim.model, sim.data, 3000)  # type: ignore
+        self.set_pose(sim, pose)
+        sim.data.ctrl[:] = np.copy(self.close_pose)
+        mujoco.mj_step(sim.model, sim.data, 3000)
 
     def to_xml(self) -> Tuple[str, Dict[str, Any]]:
         pos = "{} {} {}".format(self.pos[0], self.pos[1], self.pos[2])
