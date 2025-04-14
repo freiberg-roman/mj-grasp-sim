@@ -75,13 +75,13 @@ XML = """
     </default>
     <default class="thumb_axl">
       <joint pos="0 0 0" axis="0 0 -1"
-        limited="true" range="-0.349 2.094" />
-      <position ctrlrange="-0.349 2.094" />
+        limited="true" range="-0.47 2.443" />
+      <position ctrlrange="-0.47 2.443" />
     </default>
     <default class="thumb_mcp">
       <joint pos="0 0 0" axis="0 0 -1"
-        limited="true" range="-0.47 2.443" />
-      <position ctrlrange="-0.47 2.443" />
+        limited="true" range="-1.2, 1.9" />
+      <position ctrlrange="-1.2, 1.9" />
     </default>
     <default class="thumb_ipl">
       <joint pos="0 0 0" axis="0 0 -1"
@@ -372,7 +372,10 @@ class GripperLeap(MjShakableOpenCloseGripper, MjScannable):
         super().__init__(pose, "palm")
 
     def base_to_contact_transform(self) -> SE3Pose:
-        return SE3Pose(np.array([0.0, 0.0, 0.0]), np.array([1.0, 0.0, 0.0, 0.0]), type="wxyz")  # type: ignore
+        # type: ignore
+        return SE3Pose(
+            np.array([0.0, 0.0, 0.0]), np.array([1.0, 0.0, 0.0, 0.0]), type="wxyz"
+        )
 
     def open_gripper(self, sim: MjSimulation):
         return

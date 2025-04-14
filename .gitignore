@@ -12,6 +12,7 @@ asset/mj-objects
 
 # C extensions
 *.so
+LeapGripper/
 
 # Distribution / packaging
 top_grasp_scenes/*
