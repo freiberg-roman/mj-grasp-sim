@@ -82,7 +82,6 @@ class GravitylessObjectGrasping(MjSimulation):
         self.gripper.set_pose(self, pose_processed)
 
         mujoco.mj_forward(self.model, self.data)
-        self.gripper.close_gripper_at(self, pose_processed)
         with mujoco.viewer.launch_passive(self.model, self.data) as viewer:
             while True:
                 viewer.sync()
