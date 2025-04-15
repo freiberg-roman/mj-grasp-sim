@@ -13,6 +13,7 @@ asset/mj-objects
 # C extensions
 *.so
 LeapGripper/
+ShadowHand/
 
 # Distribution / packaging
 top_grasp_scenes/*

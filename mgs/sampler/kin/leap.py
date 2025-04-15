@@ -25,6 +25,12 @@ class LeapHandKinematicsModel(nnx.Module, KinematicsModel):
         self.base_to_contact = nnx.Variable(
             jnp.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         )
+        self.align_to_approach = nnx.Variable(
+            (
+                jnp.array([[1.0, 0, 0], [0, 1.0, 0], [0, 0, 1.0]]),
+                jnp.array([0, 0, 0.0]),
+            )
+        )
 
         self.kinematics_transforms = nnx.Variable(
             jnp.array(

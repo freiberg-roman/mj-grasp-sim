@@ -366,7 +366,7 @@ class GripperShadowRight(MjShakableOpenCloseGripper, MjScannable):
         return (xml, ASSETS)
 
     def base_to_contact_transform(self) -> SE3Pose:
-        pos = np.array([0, 0, 0.])
+        pos = np.array([0, 0, 0.0])
         quat = np.array([1.0, 0.0, 0.0, 0.0])
         return SE3Pose(pos, quat, type="wxyz")
 
@@ -379,7 +379,34 @@ class GripperShadowRight(MjShakableOpenCloseGripper, MjScannable):
     def close_gripper_at(self, sim: MjSimulation, pose: SE3Pose):
         sim.data.mocap_pos = pose.pos
         sim.data.mocap_quat = pose.quat
-        sim.data.ctrl[:] = self._qpos_to_qacc(self.close_poses[self.type])  # type: ignore
+        sim.data.ctrl[:] = self._qpos_to_qacc(
+            np.array(
+                [
+                    -0.3464,
+                    1.253,
+                    0.7836,
+                    -0.001106,
+                    0.01103,
+                    1.475,
+                    0.6181,
+                    0.0155,
+                    -0.2083,
+                    0.3328,
+                    0.07129,
+                    0.02873,
+                    0.1829,
+                    -0.2676,
+                    0.05465,
+                    0.3892,
+                    0.008468,
+                    0.07708,
+                    1.21,
+                    0.2023,
+                    0.6614,
+                    0.0102,
+                ]
+            )
+        )  # type: ignore
         mujoco.mj_step(sim.model, sim.data, 3000)  # type: ignore
 
     def get_freejoint_idxs(self, sim: MjSimulation) -> List[int]:

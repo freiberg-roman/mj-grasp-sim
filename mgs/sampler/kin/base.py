@@ -28,6 +28,7 @@ class KinematicsModel(ABC):
     local_fingertip_contact_positions: nnx.Variable
     fingertip_normals: nnx.Variable
     init_pregrasp_joint: nnx.Variable
+    align_to_approach: nnx.Variable
 
 
 @jax.jit

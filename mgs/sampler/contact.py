@@ -202,8 +202,12 @@ class ContactBasedDiff(GraspGenerator):
         x_axis = normalize_vector(x_axis)
         y_axis = jnp.cross(z_axis, x_axis)
 
+        (align_rot, align_pos) = gripper.align_to_approach.value
         initial_rotations = jnp.stack([x_axis, y_axis, z_axis], axis=-1)
+        align_pos = jnp.einsum("...ij,j->...i", initial_rotations, align_pos)
+        initial_rotations = jnp.einsum("...ij,jk->...ik", initial_rotations, align_rot)
         initial_positions = seeds + POSE_OFFSET_DISTANCE * seed_normals
+        initial_positions = initial_positions + align_pos
 
         # Optimization
         if self.trainer is None:
