@@ -1,3 +1,4 @@
+import jax.numpy as jnp
 from tqdm import tqdm
 import os
 
@@ -47,16 +48,20 @@ def main(cfg: DictConfig):
         os.makedirs(output_dir, exist_ok=True)
         num_to_generate = cfg.get("num_grasps", 10000)
 
-        if isinstance(sampler, AntipodalGraspGenerator):
-            Hs_batch, aux_info_batch = sampler.generate_grasps(num_to_generate)
-        elif isinstance(sampler, ContactBasedDiff):
+        all_hs = []
+        all_joints = []
+        for _ in range(100):
             Hs_batch, aux_info_batch = sampler.generate_grasps(
-                num_to_generate, kin_model
-            )
+                    num_to_generate, kin_model
+                )
+            all_joints.append(aux_info_batch["joints"])
+            all_hs.append(Hs_batch)
+        Hs_batch = jnp.concatenate(all_hs, axis=0)
+        joints = jnp.concatenate(all_joints, axis=0)
 
         path = os.path.join(output_dir, "candidates.npz")
 
-        state_dict = {"pose": Hs_batch, **aux_info_batch}
+        state_dict = {"pose": Hs_batch, "joints": joints}
         np.savez(path, **state_dict)
         print("Done!")
 

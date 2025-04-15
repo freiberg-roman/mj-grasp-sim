@@ -61,10 +61,13 @@ class Trainer:
         self.train_graph, self.train_state = nnx.split(
             (self.kin, self.optimizer, self.to_opt)
         )
+        self.permutation_idx = jnp.asarray(
+            list(permutations([i for i in range(len(kin.fingertip_idx))]))
+        )
 
     def train_step(self, input, target: jnp.ndarray):
         loss, self.train_state = update(
-            self.train_graph, self.train_state, input, target
+            self.train_graph, self.train_state, input, target, self.permutation_idx
         )
         return loss
 
@@ -90,6 +93,7 @@ def update(
     state,
     gripper_contact_positions,
     target_surface_positions,
+    permutations,
 ):
     kin, optimizer, to_opt = nnx.merge(graph, state)
     kin: KinematicsModel = kin
@@ -127,7 +131,14 @@ def update(
 
         cos_sim = jnp.sum(batch_surface_normals[i] * finger_normals, axis=-1)
         loss_cos = jnp.mean(0.5 * (1 - cos_sim))
-        loss = jnp.mean((batch_surface_points[i] - positions) ** 2) + 0.001 * loss_cos
+
+        target_points = find_best_assignment_and_reorder_targets(
+            positions,
+            batch_surface_points[i],
+            permutations,
+        )
+
+        loss = jnp.mean((target_points - positions) ** 2) + 0.001 * loss_cos
         return loss
 
     grad_fn = nnx.value_and_grad(loss_fn)
@@ -186,11 +197,14 @@ class ContactBasedDiff(GraspGenerator):
         num_contact_points = len(gripper.fingertip_idx)
         rng_key = jax.random.PRNGKey(0)
 
-        rand_vals = jax.random.uniform(rng_key, shape=(seeds.shape[0], seeds.shape[0]))
+        rand_vals = jax.random.uniform(
+            rng_key, shape=(seeds.shape[0], seeds.shape[0]))
         rand_vals = jnp.where(admissable_target_positions, rand_vals, -jnp.inf)
-        random_selected_idx = jnp.argsort(rand_vals, axis=1)[:, -num_contact_points:]
+        random_selected_idx = jnp.argsort(rand_vals, axis=1)[
+            :, -num_contact_points:]
         contact_points_for_seeds = jnp.take(seeds, random_selected_idx, axis=0)
-        contact_points_normals = jnp.take(seed_normals, random_selected_idx, axis=0)
+        contact_points_normals = jnp.take(
+            seed_normals, random_selected_idx, axis=0)
         contact_points_for_seeds_offset = (
             contact_points_for_seeds + TARGET_OFFSET_DISTANCE * contact_points_normals
         )
@@ -205,7 +219,8 @@ class ContactBasedDiff(GraspGenerator):
         (align_rot, align_pos) = gripper.align_to_approach.value
         initial_rotations = jnp.stack([x_axis, y_axis, z_axis], axis=-1)
         align_pos = jnp.einsum("...ij,j->...i", initial_rotations, align_pos)
-        initial_rotations = jnp.einsum("...ij,jk->...ik", initial_rotations, align_rot)
+        initial_rotations = jnp.einsum(
+            "...ij,jk->...ik", initial_rotations, align_rot)
         initial_positions = seeds + POSE_OFFSET_DISTANCE * seed_normals
         initial_positions = initial_positions + align_pos
 
@@ -229,7 +244,8 @@ class ContactBasedDiff(GraspGenerator):
             maxval=num_possible_fingertips,
         )
         transformed_points = nnx.vmap(
-            nnx.vmap(forward_kinematic_point_transform, in_axes=(None, 0, 0, None)),
+            nnx.vmap(forward_kinematic_point_transform,
+                     in_axes=(None, 0, 0, None)),
             in_axes=(0, None, None, None),
         )(
             trainer.to_opt.joints.value,
@@ -240,7 +256,8 @@ class ContactBasedDiff(GraspGenerator):
             gripper,
         )
         transformed_points = (
-            jnp.einsum("bij, bnj -> bni", initial_rotations, transformed_points)
+            jnp.einsum("bij, bnj -> bni", initial_rotations,
+                       transformed_points)
             + initial_positions[:, None, :]
         )
 
@@ -272,7 +289,8 @@ class ContactBasedDiff(GraspGenerator):
         trans = trans[:, :, None]  # reshape to (num, 3, 1)
         Hs_3x4 = jnp.concatenate([rot, trans], axis=-1)
 
-        last_row = jnp.tile(jnp.array([0, 0, 0, 1])[None, None, :], (num, 1, 1))
+        last_row = jnp.tile(jnp.array([0, 0, 0, 1])[
+                            None, None, :], (num, 1, 1))
 
         Hs = jnp.concatenate([Hs_3x4, last_row], axis=1)
         aux_info = {"joints": joints}
