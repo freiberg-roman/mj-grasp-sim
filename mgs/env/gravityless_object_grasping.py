@@ -132,6 +132,7 @@ class GravitylessObjectGrasping(MjSimulation):
         lift_dist: float = 0.1,  # Distance to lift
         shake_steps: int = 500,  # Steps per shake direction
         shake_dist: float = 0.02,  # Distance to shake side-to-side
+        enough_stable=None,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         if len(poses) != len(joints):
             raise ValueError(
@@ -144,8 +145,16 @@ class GravitylessObjectGrasping(MjSimulation):
         gripper_joint_idxs = self.get_joint_idxs(
             self.gripper.get_actuator_joint_names()
         )
-        
+
+        count_stable = 0
         for i in range(num_grasps):
+            if enough_stable is not None:
+                if count_stable >= enough_stable:
+                    positional_drift.append(np.nan)
+                    rotational_drift.append(np.nan)
+                    results.append(False)
+                    continue
+
             mujoco.mj_resetData(self.model, self.data)
             mujoco.mj_forward(self.model, self.data)
 
@@ -155,9 +164,7 @@ class GravitylessObjectGrasping(MjSimulation):
             self.gripper.set_pose(self, pose_processed)
             mujoco.mj_forward(self.model, self.data)  # Update geom positions
             obj_pose_before_close = self.get_object_transform(self.obj.name)
-            self.gripper.close_gripper_at(
-                self, pose_processed
-            )
+            self.gripper.close_gripper_at(self, pose_processed)
             if not self.check_contact_with_object():
                 # print("  Failed: No contact after closing.") # Optional debug print
                 results.append(False)
@@ -257,8 +264,7 @@ class GravitylessObjectGrasping(MjSimulation):
             if shake_passed:
                 left_direction = rot_mat @ np.array([0, -1.0, 0])
                 # Start from the right-most position and move double the distance left
-                target_pos_left = start_pos_shake + \
-                    left_direction * (2 * shake_dist)
+                target_pos_left = start_pos_shake + left_direction * (2 * shake_dist)
                 # start_pos_shake = np.copy(self.data.mocap_pos[0, :]) # Already at right pos
                 for t in range(shake_steps * 2):  # Longer move across
                     self.data.mocap_pos[0, :] = start_pos_shake + (
@@ -270,6 +276,7 @@ class GravitylessObjectGrasping(MjSimulation):
                     # print("  Failed: Lost contact after move left.") # Optional debug
 
             results.append(shake_passed)
+            count_stable += int(shake_passed)
 
         # --- Process and Return Results ---
         results_arr = np.array(results)
@@ -285,19 +292,15 @@ class GravitylessObjectGrasping(MjSimulation):
         # final_stable_mask = results_arr & pos_drift_ok & rot_drift_ok
         # return final_stable_mask, pos_drift_arr, rot_drift_arr
 
-        return results_arr# , pos_drift_arr, rot_drift_arr
+        return results_arr  # , pos_drift_arr, rot_drift_arr
 
     def get_object_transform(self, object_name: str):
         # (Implementation remains the same)
-        jnt_adr_start = self.model.jnt(
-            "{}:joint".format(object_name)).qposadr[0].item()
-        obj_position = np.copy(
-            self.data.qpos[jnt_adr_start: jnt_adr_start + 3])
-        obj_quat = np.copy(
-            self.data.qpos[jnt_adr_start + 3: jnt_adr_start + 7])
+        jnt_adr_start = self.model.jnt("{}:joint".format(object_name)).qposadr[0].item()
+        obj_position = np.copy(self.data.qpos[jnt_adr_start : jnt_adr_start + 3])
+        obj_quat = np.copy(self.data.qpos[jnt_adr_start + 3 : jnt_adr_start + 7])
         return SE3Pose(
-            obj_position.astype(np.float32), obj_quat.astype(
-                np.float32), "wxyz"
+            obj_position.astype(np.float32), obj_quat.astype(np.float32), "wxyz"
         )
 
     def check_contact(self):
@@ -311,9 +314,8 @@ class GravitylessObjectGrasping(MjSimulation):
         """
         table_id = self.model.geom("geom:ground").id
         for contact_pairs in self.data.contact.geom:
-            if (
-                (contact_pairs[0] < table_id and contact_pairs[1] > table_id)
-                or (contact_pairs[0] > table_id and contact_pairs[1] < table_id)
+            if (contact_pairs[0] < table_id and contact_pairs[1] > table_id) or (
+                contact_pairs[0] > table_id and contact_pairs[1] < table_id
             ):
                 return True
         return False

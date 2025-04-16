@@ -14,7 +14,8 @@ from mgs.util.const import ASSET_PATH
 @hydra.main(config_path="config", config_name="filter_to_stable")
 def main(cfg: DictConfig):
     gripper = get_gripper(cfg.gripper)
-    object_id_file = os.path.join(ASSET_PATH, "mj-objects", "fast_eta_objects.txt")
+    object_id_file = os.path.join(
+        ASSET_PATH, "mj-objects", "fast_eta_objects.txt")
     with open(object_id_file, "r") as file:
         all_object_ids = file.read().splitlines()
 
@@ -26,7 +27,8 @@ def main(cfg: DictConfig):
     file_dir = os.getenv("MGS_INPUT_DIR")
     if file_dir is None:
         file_dir = "."
-    file_dir = os.path.abspath(os.path.join(file_dir, cfg.gripper.name, object_id))
+    file_dir = os.path.abspath(os.path.join(
+        file_dir, cfg.gripper.name, object_id))
     file_path = os.path.join(file_dir, "candidates.npz")
 
     grasps = np.load(file_path)
@@ -40,7 +42,9 @@ def main(cfg: DictConfig):
     print(sum(mask))
 
     mask_of_mask = env.grasp_stability_evaluation_from_joints(
-        poses_collision_free, joints_collision_free
+        poses_collision_free,
+        joints_collision_free,
+        enough_stable=1000,
     )
     poses_stable = poses_collision_free[mask_of_mask]
     joints_stable = joints_collision_free[mask_of_mask]
