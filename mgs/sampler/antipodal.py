@@ -92,153 +92,89 @@ class AntipodalGraspGenerator(GraspGenerator):
 
         self.mesh = mesh
 
+
     def generate_grasps(
-        self,
-        num: int,
-        kappa: float = 15.0,
-        min_width_threshold: float = 0.003,
-        width_offset: float = 0.01,
+        self, num: int, kappa: float = 10.0, eps: float = 1e-5
     ) -> Tuple[SE3Pose, Dict[str, Any]]:
-        if self.mesh is None:
-            self.normalize_load()
+        self.normalize_load()
+        surface_points, face_idx = trimesh.sample.sample_surface(
+            self.mesh, 5 * num)
+        normals = self.mesh.face_normals[face_idx]
+        normals = normals / np.linalg.norm(normals, axis=1, keepdims=True)
+        random_dirs = np.empty_like(surface_points)
 
-        # List to store tuples: (p1, p2, dist, normal1)
-        valid_contacts_info = []
+        for i in range(len(surface_points)):
+            sample_dir = vonmises_fisher.rvs(
+                mu=-normals[i], kappa=kappa, size=1)[0]
+            random_dirs[i] = sample_dir / np.linalg.norm(sample_dir)
 
-        # Keep sampling until we have enough valid grasps
-        samples_needed = num
-        max_attempts = 5  # Limit attempts to prevent infinite loops on difficult meshes
-        attempts = 0
-        while len(valid_contacts_info) < num and attempts < max_attempts:
-            attempts += 1
-            num_to_sample = (
-                samples_needed * 5
-            )  # Oversample to increase chance of finding valid pairs
-            try:
-                surface_points, face_indices = trimesh.sample.sample_surface(
-                    self.mesh, num_to_sample
-                )
-            except Exception as e:
-                print(
-                    f"Warning: Trimesh sampling failed on attempt {attempts}: {e}. Skipping object or trying again."
-                )
-                if attempts >= max_attempts:
-                    # Return empty if sampling consistently fails
-                    return SE3Pose(np.empty((0, 3)), np.empty((0, 4)), type="wxyz"), {}
-                continue  # Try sampling again
+        contact_pairs_one = []
+        contact_pairs_two = []
+        num_points = len(surface_points)
 
-            if len(surface_points) == 0:
-                print(
-                    f"Warning: Trimesh sampling returned 0 points on attempt {attempts}. Skipping object or trying again."
-                )
-                if attempts >= max_attempts:
-                    return SE3Pose(np.empty((0, 3)), np.empty((0, 4)), type="wxyz"), {}
-                continue
+        for i in range(num_points):
+            if len(contact_pairs_one) >= num:
+                break
 
-            # Use face normals corresponding to the sampled points
-            normals = self.mesh.face_normals[face_indices]
+            origin = surface_points[i]  # First contact point
 
-            # Sample approach directions (~negative normals) from von Mises-Fisher distribution
-            random_approaches = np.zeros((len(surface_points), 3))
-            for i in range(len(surface_points)):
-                # Ensure mu is a unit vector
-                mu_norm = np.linalg.norm(normals[i, :])
-                if np.isclose(mu_norm, 0):
-                    # Handle zero norm case (e.g., degenerate triangle) - skip this point
-                    continue
-                mu = -normals[i, :] / mu_norm
-                try:
-                    # Sometimes rvs fails if mu is not perfectly normalized due to float issues
-                    random_approaches[i, :] = vonmises_fisher.rvs(
-                        mu=mu, kappa=kappa, size=1
-                    )[0]
-                except ValueError as e:
-                    print(
-                        f"Warning: vonmises_fisher failed for normal {normals[i, :]} (mu={mu}): {e}. Skipping point."
-                    )
-                    random_approaches[i, :] = np.nan  # Mark as invalid
-
-            # Prepare for ray casting
-            valid_indices = ~np.isnan(
-                random_approaches[:, 0]
-            )  # Indices of points where vMF worked
-            origins = surface_points[valid_indices]
-            directions = random_approaches[valid_indices]
-            # Keep corresponding normals
-            original_normals = normals[valid_indices]
-
-            if len(origins) == 0:
-                continue  # No valid approach directions generated
-
-            # Perform ray intersection tests
-            # Note: intersects_location returns locations, index_ray, index_tri
-
-            # Sample intersections; note that we now capture the index_ray output.
+            # Create two ray directions: one as the sampled direction, one as its negative.
+            directions = [random_dirs[i], -random_dirs[i]]
+            origins_for_rays = [origin, origin]
+            # Compute intersections (for both rays) without wrapping in any try/except block
             locations, index_ray, _ = self.mesh.ray.intersects_location(
-                ray_origins=origins,
+                ray_origins=origins_for_rays,
                 ray_directions=directions,
-                multiple_hits=True,  # Important: Get all hits along the ray
             )
 
-            # Process intersections to find valid antipodal pairs
-            for i in range(len(origins)):  # Iterate through each original sampled point
-                if len(valid_contacts_info) >= num:
-                    break  # Stop if we have enough grasps
+            valid_candidates = []
+            if locations.size > 0:
+                # Compute distance from the origin for each hit point
+                dists = np.linalg.norm(locations - origin, axis=1)
+                # Filter out intersection points closer than eps.
+                for loc, d in zip(locations, dists):
+                    if d >= eps:
+                        valid_candidates.append(loc)
 
-                p1 = origins[i]
-                normal1 = original_normals[i]
-                # Use index_ray to filter locations corresponding to the i-th ray.
-                hits_for_p1 = locations[index_ray == i]
+            # If at least one valid intersection was found, choose one at random.
+            # Otherwise, select a fallback second contact: a random point within a 10cm-cube.
+            if valid_candidates:
+                chosen_loc = valid_candidates[np.random.randint(
+                    len(valid_candidates))]
+            else:
+                # Random offset in each dimension from uniform distribution over [-0.05, 0.05]
+                # (10cm cube centered on the origin point)
+                random_offset = np.random.uniform(-0.05, 0.05, size=3)
+                chosen_loc = origin + random_offset
 
-                if len(hits_for_p1) > 0:
-                    # Calculate distances from p1 to all hit points for this ray
-                    distances = np.linalg.norm(hits_for_p1 - p1, axis=1)
+            contact_pairs_one.append(origin)
+            contact_pairs_two.append(chosen_loc)
 
-                    # Find hits that satisfy the minimum width threshold
-                    valid_hit_indices = np.where(distances >= min_width_threshold)[0]
+        # In case the above pass did not yield enough pairs, fill the remainder with
+        # pairs using random fallback contacts.
+        while len(contact_pairs_one) < num:
+            idx = np.random.randint(num_points)
+            origin = surface_points[idx]
+            random_offset = np.random.uniform(-0.05, 0.05, size=3)
+            fallback_second = origin + random_offset
+            contact_pairs_one.append(origin)
+            contact_pairs_two.append(fallback_second)
 
-                    if len(valid_hit_indices) > 0:
-                        random_valid_idx = np.random.choice(valid_hit_indices)
-                        p2 = hits_for_p1[random_valid_idx]
-                        dist = distances[random_valid_idx]
-
-                        valid_contacts_info.append((p1, p2, dist, normal1))
-                        samples_needed -= 1  # Decrement needed count
-
-            if samples_needed <= 0:
-                break  # Exit outer while loop
-
-        if len(valid_contacts_info) < num:
-            print(
-                f"Warning: Could only generate {len(valid_contacts_info)}/{num} valid grasps after {attempts} attempts."
-            )
-            if not valid_contacts_info:
-                # Return empty if no grasps could be generated
-                return SE3Pose(np.empty((0, 3)), np.empty((0, 4)), type="wxyz"), {}
-
-        # Unpack the results up to the required number
-        final_contacts_info = valid_contacts_info[:num]
-        contact_pairs_one = np.array([item[0] for item in final_contacts_info])
-        contact_pairs_two = np.array([item[1] for item in final_contacts_info])
-        contact_distances = np.array([item[2] for item in final_contacts_info])
-        surface_normals_one = np.array([item[3] for item in final_contacts_info])
-
-        # --- Calculate Widths ---
-        # Width in normalized space, including offset
-        norm_widths = contact_distances
-        # Final width after scaling
-        final_widths = norm_widths * self.scale
-
-        # --- Generate Poses ---
-        # Poses are calculated in normalized space first
+        # Compute gripper poses (in normalized space) from the contact pairs.
         Hs_norm = AntipodalGraspGenerator.define_gripper_pose(
-            contact_pairs_one, contact_pairs_two
+            np.array(contact_pairs_one), np.array(contact_pairs_two)
         )
-        # Denormalize the poses
+        # Convert poses back to the original object's coordinate system.
         Hs_denorm = self.denorm_grasp_pose(Hs_norm)
-        aux_info = {
-            "width": final_widths,
-        }
+
+        # Compute gripper widths (and clamp negative values to 0).
+        widths = np.linalg.norm(
+            np.array(contact_pairs_two) - np.array(contact_pairs_one), axis=1
+        )
+        widths = np.maximum(widths, 0)
+
+        # Scale widths back to the original object dimensions.
+        aux_info = {"width": widths * self.scale}
 
         return Hs_denorm, aux_info
 
@@ -272,7 +208,8 @@ class AntipodalGraspGenerator(GraspGenerator):
             # For now, normalize where possible, others might remain NaN/Inf
             antipodal_direction[valid_norm.flatten()] /= norm[valid_norm]
             # Set invalid ones to a default like [1, 0, 0] to avoid crashes downstream
-            antipodal_direction[~valid_norm.flatten()] = np.array([1.0, 0.0, 0.0])
+            antipodal_direction[~valid_norm.flatten()] = np.array([
+                1.0, 0.0, 0.0])
         else:
             antipodal_direction /= norm
 
@@ -281,7 +218,8 @@ class AntipodalGraspGenerator(GraspGenerator):
 
         # Calculate cross product for z-axis (approach)
         approach_direction = np.cross(antipodal_direction, random_vectors)
-        approach_norm = np.linalg.norm(approach_direction, axis=1, keepdims=True)
+        approach_norm = np.linalg.norm(
+            approach_direction, axis=1, keepdims=True)
 
         # Handle cases where random vector is parallel to antipodal_direction
         invalid_approach = np.isclose(approach_norm, 0.0).flatten()
@@ -310,8 +248,10 @@ class AntipodalGraspGenerator(GraspGenerator):
             )
             # Fallback: Try crossing with Z-axis, unless antipodal is Z
             z_axis = np.array([0.0, 0.0, 1.0])
-            fallback_approach = np.cross(antipodal_direction[invalid_approach], z_axis)
-            fallback_norm = np.linalg.norm(fallback_approach, axis=1, keepdims=True)
+            fallback_approach = np.cross(
+                antipodal_direction[invalid_approach], z_axis)
+            fallback_norm = np.linalg.norm(
+                fallback_approach, axis=1, keepdims=True)
             # Check if antipodal was Z-axis
             parallel_to_z = np.isclose(fallback_norm, 0.0).flatten()
             if np.any(parallel_to_z):

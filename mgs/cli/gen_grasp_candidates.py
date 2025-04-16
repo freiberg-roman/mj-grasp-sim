@@ -1,4 +1,3 @@
-import jax.numpy as jnp
 from mgs.util.geo.transforms import SE3Pose
 from tqdm import tqdm
 import os
@@ -8,10 +7,7 @@ import numpy as np
 from omegaconf import DictConfig
 
 from mgs.obj.selector import get_object
-from mgs.sampler.contact import ContactBasedDiff
 from mgs.sampler.antipodal import AntipodalGraspGenerator
-from mgs.sampler.kin.shadow import ShadowKinematicsModel
-from mgs.sampler.kin.leap import LeapHandKinematicsModel
 from mgs.util.const import ASSET_PATH
 from mgs.gripper.vx300 import GripperVX300
 from mgs.gripper.panda import GripperPanda
@@ -24,14 +20,6 @@ def main(cfg: DictConfig):
     with open(object_id_file, "r") as file:
         all_object_ids = file.read().splitlines()
 
-    obj = get_object(all_object_ids[0])
-    cbd = ContactBasedDiff(obj)
-    all_kins = {
-        "ShadowHand": ShadowKinematicsModel(),
-        "LeapGripper": LeapHandKinematicsModel(),
-        "PandaGripper": None,
-        "VXGripper": None,
-    }
     all_gripper = {
         "ShadowHand": None,
         "LeapGripper": None,
@@ -41,12 +29,21 @@ def main(cfg: DictConfig):
 
     object_id = all_object_ids[int(cfg.id)]
     obj = get_object(object_id)
-    sampler = (
-        cbd.update_object(obj)
-        if cfg.gripper.name in ["ShadowHand", "LeapGripper"]
-        else AntipodalGraspGenerator(obj)
-    )
-    kin_model = all_kins[cfg.gripper.name]
+    sampler = None
+    if cfg.gripper.name in ["ShadowHand", "LeapGripper"]:
+        from mgs.sampler.contact import ContactBasedDiff
+        from mgs.sampler.kin.shadow import ShadowKinematicsModel
+        from mgs.sampler.kin.leap import LeapHandKinematicsModel
+        sampler = ContactBasedDiff(obj)
+        all_kins = {
+            "ShadowHand": ShadowKinematicsModel(),
+            "LeapGripper": LeapHandKinematicsModel(),
+            "PandaGripper": None,
+            "VXGripper": None,
+        }
+        kin_model = all_kins[cfg.gripper.name]
+    else:
+        sampler = AntipodalGraspGenerator(obj)
 
     output_dir = os.getenv("MGS_OUTPUT_DIR")
     if output_dir is None:
@@ -67,14 +64,17 @@ def main(cfg: DictConfig):
             joints = np.stack([j1, j2], axis=-1)
             all_joints.append(joints)
             all_hs.append(Hs_batch)
+            Hs_batch = np.concatenate(all_hs, axis=0)
+            joints = np.concatenate(all_joints, axis=0)
         else:
+            import jax.numpy as jnp
             Hs_batch, aux_info_batch = sampler.generate_grasps(
                 num_to_generate, kin_model
             )
             all_joints.append(aux_info_batch["joints"])
             all_hs.append(Hs_batch)
-    Hs_batch = jnp.concatenate(all_hs, axis=0)
-    joints = jnp.concatenate(all_joints, axis=0)
+            Hs_batch = jnp.concatenate(all_hs, axis=0)
+            joints = jnp.concatenate(all_joints, axis=0)
 
     path = os.path.join(output_dir, "candidates.npz")
 
