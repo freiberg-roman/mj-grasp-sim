@@ -6,6 +6,7 @@ defaults:
   - gripper: leap
 
 num_grasps: 10000
+id: 0
 
 hydra:
   job:

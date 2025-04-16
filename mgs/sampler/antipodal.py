@@ -236,21 +236,11 @@ class AntipodalGraspGenerator(GraspGenerator):
         )
         # Denormalize the poses
         Hs_denorm = self.denorm_grasp_pose(Hs_norm)
-        grasp_poses = SE3Pose.from_mat(Hs_denorm, type="wxyz")  # Assuming wxyz output
-
-        # --- Denormalize Contact Points for Auxiliary Info ---
-        denorm_points_one = self.denormalize_points(contact_pairs_one)
-        denorm_points_two = self.denormalize_points(contact_pairs_two)
-
-        # --- Prepare Auxiliary Information ---
         aux_info = {
-            "contact_points_one": denorm_points_one,
-            "contact_points_two": denorm_points_two,
-            "surface_normals_one": surface_normals_one,  # From normalized mesh
-            "grasp_widths": final_widths,
+            "width": final_widths,
         }
 
-        return grasp_poses, aux_info
+        return Hs_denorm, aux_info
 
     @classmethod
     def define_gripper_pose(

@@ -283,16 +283,7 @@ class GripperVX300(MjShakableOpenCloseGripper, MjScannable):
         sim.data.ctrl[1] = target_q2
         # Don't set qpos here
 
-    def set_gripper_width(self, sim: MjSimulation, width: float):
-        """
-        Sets the gripper fingers to a state corresponding to a target width.
-
-        Args:
-            sim: The MjSimulation instance.
-            width: The desired distance between the fingertips in meters.
-                   The width will be clamped between MIN_WIDTH (4.2cm)
-                   and MAX_WIDTH (11.4cm).
-        """
+    def width_to_joints(self, width: float):
         clamped_width = np.clip(width, self.MIN_WIDTH, self.MAX_WIDTH)
         target_q1 = 0.5 * clamped_width
         target_q2 = -0.5 * clamped_width
@@ -300,26 +291,7 @@ class GripperVX300(MjShakableOpenCloseGripper, MjScannable):
         # Clip again just in case of float issues (though clamping width should suffice)
         target_q1 = np.clip(target_q1, self.Q1_RANGE[0], self.Q1_RANGE[1])
         target_q2 = np.clip(target_q2, self.Q2_RANGE[0], self.Q2_RANGE[1])
-
-        # Get the qpos indices for the finger joints
-        qpos_indices = sim.get_joint_idxs(self.get_actuator_joint_names())
-
-        if len(qpos_indices) != 2:
-            raise RuntimeError(
-                f"Could not find both VX300 finger joint indices. Found: {qpos_indices}"
-            )
-
-        # Set the desired joint positions directly in qpos
-        sim.data.qpos[qpos_indices[0]] = target_q1
-        sim.data.qpos[qpos_indices[1]] = target_q2
-
-        # Set the control signal to match the target qpos for the position actuators
-        # act_left targets left_finger (q1), act_right targets right_finger (q2)
-        sim.data.ctrl[0] = target_q1
-        sim.data.ctrl[1] = target_q2
-
-        # Update simulation state after changing qpos
-        mujoco.mj_forward(sim.model, sim.data)
+        return target_q1, target_q2
 
     def close_gripper_at(self, sim: MjSimulation, pose: SE3Pose):
         """
