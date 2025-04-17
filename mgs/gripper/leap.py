@@ -41,10 +41,10 @@ XML = """
       <geom group="1" type="mesh" contype="0" conaffinity="0" density="0" material="black" />
     </default>
     <default class="tip">
-      <geom type="mesh" mesh="tip" friction="0.5"/>
+      <geom type="mesh" mesh="tip" friction="2.5"/>
     </default>
     <default class="thumb_tip">
-      <geom type="mesh" mesh="thumb_tip" friction="0.5"/>
+      <geom type="mesh" mesh="thumb_tip" friction="2.5"/>
     </default>
 
     <!-- joint class defaults -->
@@ -372,22 +372,22 @@ class GripperLeap(MjShakableOpenCloseGripper, MjScannable):
         super().__init__(pose, "palm")
         self.close_pose = np.array(
             [
-                1.2,
-                0.0,
-                1.5,
-                1.1,
-                1.2,
-                0.0,
-                1.5,
-                1.1,
-                1.2,
-                0.0,
-                1.5,
-                1.1,
-                1.95,
-                0.5,
-                0.55,
-                0.35,
+                0.576,  # if_mcp_act
+                0.0,  # if_rot_act
+                1.43,  # if_pip_act
+                0.453,  # if_dip_act
+                0.856,  # mf_mcp_act
+                0.0,  # mf_rot_act
+                0.68,  # mf_pip_act
+                0.826,  # mf_dip_act
+                0.945,  # rf_mcp_act
+                0.0,  # rf_rot_act
+                1.3,  # rf_pip_act
+                0.2,  # rf_dip_act
+                1.81,  # th_cmc_act
+                0.258,  # th_axl_act
+                0.505,  # th_mcp_act
+                0.351,  # th_ipl_act
             ]
         )
 

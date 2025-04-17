@@ -263,39 +263,55 @@ class ClutterTableEnv(MjScanEnv, Loadable):
                 return 1.0
         return 0.0
 
-    def grasp_stable_mask(self, grasps, env_state):
-        is_grasp_stable = []
+    def grasp_stable_mask(
+        self,
+        poses: SE3Pose,
+        joints: np.ndarray,
+        env_state,
+        nstep_lift: int = 3000,  # Steps for lifting simulation
+        lift_dist: float = 0.3,  # Distance to lift
+        enough_stable=None,
+    ):
+        results: List[bool] = []
+        num_grasps = len(poses)
+        gripper_joint_idxs = self.get_joint_idxs(
+            self.gripper.get_actuator_joint_names()
+        )
 
-        b2c = self.gripper.base_to_contact_transform()
-        grasps = grasps @ b2c
-        for grasp in grasps:
-            spec = mujoco.mjtState.mjSTATE_INTEGRATION  # type: ignore
-            mujoco.mj_setState(self.model, self.data, env_state, spec)  # type: ignore
-            self.gripper.open_gripper(self)
-            self.gripper.set_pose(self, grasp)
-            if self.check_gripper_collision():
-                is_grasp_stable.append(False)
-                continue
+        count_stable = 0
+        for i in range(num_grasps):
+            lift_passed = True
+            spec = mujoco.mjtState.mjSTATE_INTEGRATION
+            mujoco.mj_setState(self.model, self.data, env_state, spec)
+            if enough_stable is not None:
+                if count_stable >= enough_stable:
+                    results.append(False)
+                    continue
 
-            self.gripper.close_gripper_at(self, grasp)
-            current_pos, current_quat = np.copy(grasp.pos), np.copy(grasp.quat)
-            z = np.copy(current_pos[2])
-            for i in range(20000):
-                self.data.mocap_pos[0, :] = current_pos
-                self.data.mocap_quat[0, :] = current_quat
-                self.data.mocap_pos[0, 2] = np.copy(z)
-                z += 0.00003
-                mujoco.mj_step(self.model, self.data)  # type: ignore
-                if i in [x for x in range(3000, 18001, 500)]:
-                    if not self.check_gripper_contact():
-                        break
+            b2c = self.gripper.base_to_contact_transform()
+            pose_processed = poses[i] @ b2c
+            self.set_qpos(joints[i], gripper_joint_idxs)
+            self.gripper.set_pose(self, pose_processed)
+            # Update geom positions
+            mujoco.mj_forward(self.model, self.data)
+            self.gripper.close_gripper_at(self, pose_processed)
 
-            if self.check_gripper_contact():
-                is_grasp_stable.append(True)
-            else:
-                is_grasp_stable.append(False)
+            start_pos_lift = np.copy(self.data.mocap_pos[0, :])
+            lift_target_z = start_pos_lift[2] + lift_dist
+            for t in range(nstep_lift):
+                current_z = start_pos_lift[2] + (lift_target_z - start_pos_lift[2]) * (
+                    t / nstep_lift
+                )
+                self.data.mocap_pos[0, 2] = current_z
+                mujoco.mj_step(self.model, self.data)
+                if (t + 1) % 100 == 0 and not self.check_gripper_contact():
+                    lift_passed = False
+                    break
 
-        stable_grasp_masks = np.array(is_grasp_stable)
+            results.append(lift_passed)
+            count_stable += int(lift_passed)
+
+        stable_grasp_masks = np.array(results)
         return stable_grasp_masks
 
     def get_obj_pose(self, object_name: str):
@@ -305,29 +321,43 @@ class ClutterTableEnv(MjScanEnv, Loadable):
         obj_quat = np.copy(self.data.qpos[jnt_adr_start + 3 : jnt_adr_start + 7])
         return SE3Pose(obj_position, obj_quat, "wxyz")
 
-    def grasp_collision_mask(self, grasps: SE3Pose) -> np.ndarray:
-        current_state = self.get_state()
+    def grasp_collision_mask(
+        self,
+        poses: SE3Pose,
+        joints: np.ndarray,
+    ):
+        initial_state = self.get_state()
         collision_free_grasps = []
-        for grasp in grasps:
+        gripper_joint_idxs = self.get_joint_idxs(
+            self.gripper.get_actuator_joint_names()
+        )  # Cache indices
+        for i in range(len(joints)):
+            pose = poses[i]
+            joint = joints[i]
+
             in_bound = (
-                (grasp.pos[..., 0] < 0.5)
-                & (grasp.pos[..., 0] > -0.5)
-                & (grasp.pos[..., 1] < 0.5)
-                & (grasp.pos[..., 1] > -0.5)
-                & (grasp.pos[..., 2] < 1.0)
-                & (grasp.pos[..., 2] > 0.0)
+                (pose.pos[..., 0] < 0.25)
+                & (pose.pos[..., 0] > -0.25)
+                & (pose.pos[..., 1] < 0.25)
+                & (pose.pos[..., 1] > -0.25)
+                & (pose.pos[..., 2] < 1.0)
+                & (pose.pos[..., 2] > 0.0)
             ).item()
             if not in_bound:
                 collision_free_grasps.append(False)
                 continue
 
-            self.set_state(current_state)
-            self.gripper.open_gripper(self)
+            self.set_state(initial_state)
             b2c = self.gripper.base_to_contact_transform()
-            self.gripper.set_pose(self, grasp @ b2c)
+            pose_processed = pose @ b2c
+            self.set_qpos(joint, gripper_joint_idxs)
+            self.gripper.set_pose(self, pose_processed)
+            mujoco.mj_forward(self.model, self.data)
+
             has_collision = self.check_gripper_collision()
             collision_free_grasps.append(not has_collision)
         collision_free_masks = np.array(collision_free_grasps)
+        self.set_state(initial_state)
         return collision_free_masks
 
     def to_dict(self):

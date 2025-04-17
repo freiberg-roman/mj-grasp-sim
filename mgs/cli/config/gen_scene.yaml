@@ -3,16 +3,11 @@
 
 defaults:
   - _self_
-  - gripper: google
-  - object: subset_from_all
+  - gripper: panda
+  - object: subset_from_fast
   - env: clutter_table
 
-
-num_objects_min: 1
-num_objects_max: 12
-num_images: 10
-
-debug: false
+num_objects: 1
 
 hydra:
   job:
