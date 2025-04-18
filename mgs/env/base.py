@@ -37,7 +37,9 @@ class MjScanEnv(MjSimulation):
         self.width = image_width
         self.height = image_height
         cam_id = mujoco.mj_name2id(  # type: ignore
-            m=self.model, name=camera_name, type=mujoco.mjtObj.mjOBJ_CAMERA  # type: ignore
+            m=self.model,
+            name=camera_name,
+            type=mujoco.mjtObj.mjOBJ_CAMERA,  # type: ignore
         )
         self.fovy = self.model.cam_fovy[cam_id]
         self.fovx = (
@@ -116,7 +118,7 @@ class MjScanEnv(MjSimulation):
         # masks
         zero_one_img = (~(segmentation == -1)).astype(np.uint8)
         kernel = np.ones((3, 3), np.uint8)
-        erode_selection = cv2.erode(zero_one_img, kernel, iterations=1)
+        erode_selection = cv2.erode(zero_one_img, kernel, iterations=5)
         image_masks = erode_selection.astype(bool)
 
         rgbd[..., :-1] = rgbd[..., :-1] / 255.0

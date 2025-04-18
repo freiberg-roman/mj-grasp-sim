@@ -3,10 +3,11 @@
 
 defaults:
   - _self_
-  - env: bin_picking
-  - gripper: google
+  - env: clutter_table
+  - gripper: panda
 
-num_images: 10
+num_images: 100
+id: 0
 
 hydra:
   job:

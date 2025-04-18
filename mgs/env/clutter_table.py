@@ -23,9 +23,9 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from mgs.env.base import Loadable, MjScanEnv
-from mgs.gripper.base import MjShakableOpenCloseGripper
+from mgs.gripper.base import MjShakableOpenCloseGripper, MjScannable
 from mgs.obj.base import CollisionMeshObject
-from mgs.util.camera import rnd_camera_pose_restricted
+from mgs.util.camera import fibonacci_sphere
 from mgs.util.geo.convert import quat_xyzw_to_wxyz
 from mgs.util.geo.transforms import SE3Pose
 
@@ -222,11 +222,17 @@ class ClutterTableEnv(MjScanEnv, Loadable):
             mujoco.mj_step(self.model, self.data)  # type: ignore
 
     def update_camera_settings(self, num_images, i):
-        rnd_pos, _ = rnd_camera_pose_restricted(radius=1.2, phi=np.pi * 0.25)
+        rnd_pos = fibonacci_sphere(total_num=num_images, i=i)
+        rnd_pos[2] = np.abs(rnd_pos[2]) + 0.01  # upper hemisphere
         jnt_adr_start = self.model.jnt("camera:joint").qposadr[0].item()
         self.data.qpos[jnt_adr_start : jnt_adr_start + 3] = rnd_pos
         mujoco.mj_forward(self.model, self.data)  # type: ignore
-        self.renderer.update_scene(self.data, camera="camera")
+        options = (
+            self.gripper.get_render_options()
+            if isinstance(self.gripper, MjScannable)
+            else None
+        )
+        self.renderer.update_scene(self.data, camera="camera", scene_option=options)
 
     def check_gripper_collision(self):
         """

@@ -180,7 +180,6 @@ def compute_l2_distance_matrix(
 
 
 def farthest_point_sampling(x, num_samples):
-    # ... (implementation as before) ...
     x = jax.lax.stop_gradient(x)
     farthest_points_idx = jnp.zeros(num_samples, dtype=jnp.int32)
     farthest_points_idx = farthest_points_idx.at[0].set(0)
