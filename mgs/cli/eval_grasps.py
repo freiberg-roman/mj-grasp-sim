@@ -6,11 +6,8 @@ import hydra
 import numpy as np
 from omegaconf import DictConfig
 
-from mgs.env.selector import get_env, get_env_from_dict
-from mgs.gripper.selector import get_gripper
-from mgs.obj.selector import get_objects
+from mgs.env.selector import get_env_from_dict
 from mgs.util.geo.transforms import SE3Pose
-from mgs.util.file import generate_unique_hash
 
 
 def eval_grasps(cfg: DictConfig, scene_def, grasps):
@@ -41,7 +38,7 @@ def eval_grasps(cfg: DictConfig, scene_def, grasps):
     )
 
 
-@hydra.main(config_path="config", config_name="gen_scene")
+@hydra.main(config_path="config", config_name="eval_grasps")
 def main(cfg: DictConfig):
     output_dir = os.getenv("MGS_OUTPUT_DIR")
     input_dir = os.getenv("MGS_INPUT_DIR")
