@@ -25,6 +25,12 @@ def eval_grasps(cfg: DictConfig, scene_def, grasps):
     pose_collision_free = pose[collision_free_mask]
     joints_collision_free = joints[collision_free_mask]
 
+    if sum(collision_free_mask) == 0:
+        return (
+            0.0,
+            {"num_objects": len(env.object_names)},
+        )
+
     stable_grasp_mask = env.grasp_stable_mask(
         SE3Pose.from_mat(deepcopy(pose_collision_free), type="wxyz"),
         deepcopy(joints_collision_free),
@@ -53,7 +59,8 @@ def main(cfg: DictConfig):
     scene_dir = os.path.join(all_scene_dir, scene)
 
     scene_path = os.path.join(scene_dir, "scene.npz")
-    scene_dict = np.load(scene_path)["scene_definition"].item()
+    scene_dict = np.load(scene_path, allow_pickle=True)[
+        "scene_definition"].item()
 
     grasp_path = os.path.join(scene_dir, "inference_grasps.npz")
     grasps = np.load(grasp_path)
