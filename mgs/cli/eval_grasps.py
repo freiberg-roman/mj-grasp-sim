@@ -40,17 +40,16 @@ def eval_grasps(cfg: DictConfig, scene_def, grasps):
 
 @hydra.main(config_path="config", config_name="eval_grasps")
 def main(cfg: DictConfig):
-    output_dir = os.getenv("MGS_OUTPUT_DIR")
     input_dir = os.getenv("MGS_INPUT_DIR")
-    assert output_dir is not None, "No ouput_dir defined!"
     assert input_dir is not None, "No input_dir defined!"
 
     all_scene_dir = os.path.join(
-        output_dir,
+        input_dir,
         cfg.gripper.name,
     )
     all_scenes = os.listdir(all_scene_dir)
-    scene = all_scenes.sort()[cfg.id]
+    all_scenes.sort()
+    scene = all_scenes[cfg.id]
     scene_dir = os.path.join(all_scene_dir, scene)
 
     scene_path = os.path.join(scene_dir, "scene.npz")
@@ -68,7 +67,7 @@ def main(cfg: DictConfig):
         "scene_id": scene,
     }
 
-    results_path = os.path.join(output_dir, "grasp_evaluation.json")
+    results_path = os.path.join(scene_dir, "grasp_evaluation.json")
     with open(results_path, "w") as f:
         json.dump(results, f, indent=2)
 
