@@ -52,3 +52,6 @@ ENTRYPOINT ["python", "-m", "mgs.cli.filter_to_stable"]
 FROM base-app AS grasp-gen
 ENTRYPOINT ["python", "-m", "mgs.cli.gen_grasp_candidates"]
 
+FROM base-app AS grasp-eval
+ENTRYPOINT ["python", "-m", "mgs.cli.eval_grasps"]
+
