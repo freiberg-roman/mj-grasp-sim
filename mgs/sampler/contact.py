@@ -273,6 +273,8 @@ class ContactBasedDiff(GraspGenerator):
             permutation_idx,
         )
 
+        #TODO visual target contact points on the object
+        # intial poses + joints related to the object
         for i in range(150):
             trainer.train_step(
                 gripper.local_fingertip_contact_positions[
@@ -282,6 +284,8 @@ class ContactBasedDiff(GraspGenerator):
             )
 
         _, _, opt_state = nnx.merge(trainer.train_graph, trainer.train_state)
+
+        #TODO visualize the same after optimization
 
         rot = rotation_6d_to_matrix(opt_state.rot.value)
         trans = opt_state.pos.value

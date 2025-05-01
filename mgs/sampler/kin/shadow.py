@@ -328,6 +328,8 @@ def visualize_shadow_initial_contacts_normals():
     # These imports need to be resolvable
     kin_model = ShadowKinematicsModel()
     # --- Ensure using JAX array for theta ---
+    # TODO: Select different joint values and visualize them
+    # Use the GUI to compare some initial joint values
     initial_pose_jax = jnp.array(
         kin_model.init_pregrasp_joint.value
     )  # Get initial pose
@@ -343,6 +345,8 @@ def visualize_shadow_initial_contacts_normals():
     )
     # Ensure kin_model is passed correctly (might need graph/state if using nnx.split elsewhere)
     # Assuming kinematic_pcd_transform can take the model instance directly
+
+    #TODO: understand kinematic_pcd_transform doing
     points_vis_transformed_jax = kinematic_pcd_transform(
         points_vis_jax, initial_pose_jax, segmentations_jax, kin_model
     )
@@ -372,6 +376,8 @@ def visualize_shadow_initial_contacts_normals():
             forward_kinematic_point_transform, in_axes=(None, 0, None, None)
         )(theta, local_pts, joint_idx, model)
 
+
+    #TODO : visual finger tip points and their normals
     for i in range(len(fingertip_joint_indices)):
         joint_idx = fingertip_joint_indices[i]
         local_point_contact = local_contacts[i]
