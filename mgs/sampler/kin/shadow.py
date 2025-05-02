@@ -260,7 +260,7 @@ except Exception as e:
     print(f"Warning: Path detection failed {e}. Using default DATA_PATH: {DATA_PATH}")
 
 
-SHADOW_NPZ_FILE = "gripper_shadow.npz"
+SHADOW_NPZ_FILE = "./mgs/sampler/kin/gripper_shadow.npz"
 NUM_POINTS_VIS = 2000
 NORMAL_VIS_LENGTH = 0.02
 
@@ -355,9 +355,7 @@ def visualize_shadow_initial_contacts_normals():
 
     # 4. Transform Contact Points and Calculate Normals using YOUR FK function
     print("Transforming contact points and calculating normals using YOUR FK...")
-    local_contacts = kin_model.local_fingertip_contact_positions.value.squeeze(
-        1
-    )  # (5, 3)
+    local_contacts = kin_model.local_fingertip_contact_positions.value[:, 0, :]   # (5, 3)
     # (5, 3)
     local_normals = kin_model.fingertip_normals.value
     # Local origin for normal calculation
