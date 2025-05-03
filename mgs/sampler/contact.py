@@ -19,6 +19,7 @@ from mgs.sampler.kin.jax_util import (
 )
 from mgs.sampler.kin.base import KinematicsModel, forward_kinematic_point_transform
 import jax.numpy as jnp
+import plotly.graph_objects as go
 
 NUM_SURFACE_SAMPLES = 30000
 LOCAL_REGION_RADIUS = 0.10  # 10 cm
@@ -275,6 +276,79 @@ class ContactBasedDiff(GraspGenerator):
 
         #TODO visual target contact points on the object
         # intial poses + joints related to the object
+
+        # Visualize target contact points on the object (before optimization)
+        # Create figure
+        fig = go.Figure()
+        
+        # Add mesh as wireframe
+        mesh_vertices = np.array(self.mesh.vertices)
+        mesh_faces = np.array(self.mesh.faces)
+        x, y, z = mesh_vertices.T
+        i, j, k = mesh_faces.T
+        fig.add_trace(go.Mesh3d(x=x, y=y, z=z, i=i, j=j, k=k, 
+                                color='lightgray', opacity=0.5))
+        
+        # Add target contact points
+        print(contact_points_for_seeds_offset.shape)
+        contact_pts = contact_points_for_seeds_offset[0]  # For the first grasp
+        fig.add_trace(go.Scatter3d(x=target_points[0, :, 0], 
+                                    y=target_points[0, :, 1], 
+                                    z=target_points[0, :, 2],
+                                    mode='markers',
+                                    marker=dict(size=8, color='blue'),
+                                    name='Target Contact Points'))
+        
+        # Add normals at contact points
+        normals = contact_points_normals[0]
+        scale = 0.03  # Scale for normal visualization
+        for i, (pt, norm) in enumerate(zip(contact_pts, normals)):
+            end_pt = pt + scale * norm
+            fig.add_trace(go.Scatter3d(
+                x=[pt[0], end_pt[0]], 
+                y=[pt[1], end_pt[1]], 
+                z=[pt[2], end_pt[2]],
+                mode='lines',
+                line=dict(color='red', width=4),
+                name=f'Normal {i}'
+            ))
+        
+        # Add initial finger contact points
+        init_contacts = transformed_points[0]
+        fig.add_trace(go.Scatter3d(
+            x=init_contacts[:, 0],
+            y=init_contacts[:, 1],
+            z=init_contacts[:, 2],
+            mode='markers',
+            marker=dict(size=8, color='green'),
+            name='Initial Finger Positions'
+        ))
+        
+        # Add hand base position
+        fig.add_trace(go.Scatter3d(
+            x=[initial_positions[0, 0]],
+            y=[initial_positions[0, 1]],
+            z=[initial_positions[0, 2]],
+            mode='markers',
+            marker=dict(size=12, color='orange', symbol='diamond'),
+            name='Hand Base Position'
+        ))
+        
+        # Configure layout
+        fig.update_layout(
+            scene=dict(
+                aspectmode='data',
+                xaxis_title='X',
+                yaxis_title='Y',
+                zaxis_title='Z'
+            ),
+            title="Target Contact Points and Initial Hand Pose",
+            width=800,
+            height=800,
+            legend=dict(x=0, y=0)
+        )
+        
+        fig.show()
         for i in range(150):
             trainer.train_step(
                 gripper.local_fingertip_contact_positions[
@@ -299,3 +373,5 @@ class ContactBasedDiff(GraspGenerator):
         Hs = jnp.concatenate([Hs_3x4, last_row], axis=1)
         aux_info = {"joints": joints}
         return Hs, aux_info
+
+
