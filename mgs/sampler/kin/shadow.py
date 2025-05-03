@@ -330,10 +330,39 @@ def visualize_shadow_initial_contacts_normals():
     # --- Ensure using JAX array for theta ---
     # TODO: Select different joint values and visualize them
     # Use the GUI to compare some initial joint values
-    initial_pose_jax = jnp.array(
-        kin_model.init_pregrasp_joint.value
-    )  # Get initial pose
-    print("  Using initial pre-grasp joint configuration.")
+    another_theta = jnp.array(
+        [
+            0.059,
+            -0.437,
+            -0.041,
+            -0.0036,
+            -0.067,
+            -0.0186,
+            0.0147,
+            0.0152,
+            -0.0958,
+            0.0145,
+            1.15,
+            0.9,
+            0.01,
+            0.01,
+            0.81,
+            0.91,
+            0.939,
+            0.025,
+            -0.0175,
+            -0.16,
+            0.321,
+            -0.01,
+        ]
+    )
+    # initial_pose_jax = jnp.array(
+    #     kin_model.init_pregrasp_joint.value
+    # )  # Get initial pose
+    # print("  Using initial pre-grasp joint configuration.")
+
+    initial_pose_jax = another_theta  # Use the new theta
+    print("  Using another theta configuration.")
 
     # Convert inputs to JAX arrays
     points_vis_jax = jnp.array(points_vis_np)
