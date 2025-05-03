@@ -361,26 +361,19 @@ class ContactBasedDiff(GraspGenerator):
             gripper,
         )
         transformed_points = (
-            jnp.einsum("bij, bnj -> bni", initial_rotations,
+            jnp.einsum("bij, bnj -> bni", rotation_6d_to_matrix(opt_state.rot.value),
                        transformed_points)
-            + initial_positions[:, None, :]
-        )
-        opt_target_points = nnx.vmap(
-            find_best_assignment_and_reorder_targets, in_axes=(0, 0, None)
-        )(
-            transformed_points,
-            contact_points_for_seeds_offset,
-            permutation_idx,
+            + opt_state.pos.value[:, None, :]
         )
 
-        fig.add_trace(go.Scatter3d(x=opt_target_points[0, :, 0], 
-                                    y=opt_target_points[0, :, 1], 
-                                    z=opt_target_points[0, :, 2],
+        fig.add_trace(go.Scatter3d(x=transformed_points[0, :, 0], 
+                                    y=transformed_points[0, :, 1], 
+                                    z=transformed_points[0, :, 2],
                                     mode='markers',
                                     marker=dict(size=8, color='purple'),
                                     name='Optimized Contact Points'))
         
-        for i, (pt, norm) in enumerate(zip(opt_target_points[0], contact_points_normals[0])):
+        for i, (pt, norm) in enumerate(zip(transformed_points[0], contact_points_normals[0])):
             end_pt = pt + scale * norm
             fig.add_trace(go.Scatter3d(
                 x=[pt[0], end_pt[0]], 
