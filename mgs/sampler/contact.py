@@ -107,6 +107,7 @@ def update(
         [gripper_contact_positions, joint_origin, contact_neg_normal], axis=0
     )
 
+
     def loss_fn(to_opt, i):
         transformed_values = nnx.vmap(
             forward_kinematic_point_transform,
@@ -334,6 +335,61 @@ class ContactBasedDiff(GraspGenerator):
             name='Hand Base Position'
         ))
         
+        
+        for i in range(150):
+            trainer.train_step(
+                gripper.local_fingertip_contact_positions[
+                    jnp.arange(num_contact_points), idx, :
+                ],
+                (target_points, contact_points_normals),
+            )
+
+        _, _ , opt_state = nnx.merge(trainer.train_graph, trainer.train_state)
+
+        #TODO visualize the same after optimization
+    
+        transformed_points = nnx.vmap(
+            nnx.vmap(forward_kinematic_point_transform,
+                     in_axes=(None, 0, 0, None)),
+            in_axes=(0, None, None, None),
+        )(
+            opt_state.joints.value,
+            gripper.local_fingertip_contact_positions[
+                jnp.arange(num_contact_points), idx, :
+            ],
+            gripper.fingertip_idx,
+            gripper,
+        )
+        transformed_points = (
+            jnp.einsum("bij, bnj -> bni", initial_rotations,
+                       transformed_points)
+            + initial_positions[:, None, :]
+        )
+        opt_target_points = nnx.vmap(
+            find_best_assignment_and_reorder_targets, in_axes=(0, 0, None)
+        )(
+            transformed_points,
+            contact_points_for_seeds_offset,
+            permutation_idx,
+        )
+
+        fig.add_trace(go.Scatter3d(x=opt_target_points[0, :, 0], 
+                                    y=opt_target_points[0, :, 1], 
+                                    z=opt_target_points[0, :, 2],
+                                    mode='markers',
+                                    marker=dict(size=8, color='purple'),
+                                    name='Optimized Contact Points'))
+        
+        for i, (pt, norm) in enumerate(zip(opt_target_points[0], contact_points_normals[0])):
+            end_pt = pt + scale * norm
+            fig.add_trace(go.Scatter3d(
+                x=[pt[0], end_pt[0]], 
+                y=[pt[1], end_pt[1]], 
+                z=[pt[2], end_pt[2]],
+                mode='lines',
+                line=dict(color='pink', width=4),
+                name=f'Normal {i}'
+            ))
         # Configure layout
         fig.update_layout(
             scene=dict(
@@ -349,17 +405,8 @@ class ContactBasedDiff(GraspGenerator):
         )
         
         fig.show()
-        for i in range(150):
-            trainer.train_step(
-                gripper.local_fingertip_contact_positions[
-                    jnp.arange(num_contact_points), idx, :
-                ],
-                (target_points, contact_points_normals),
-            )
 
-        _, _, opt_state = nnx.merge(trainer.train_graph, trainer.train_state)
-
-        #TODO visualize the same after optimization
+        
 
         rot = rotation_6d_to_matrix(opt_state.rot.value)
         trans = opt_state.pos.value
