@@ -197,3 +197,145 @@ class AllegroKinematicsModel(nnx.Module, KinematicsModel):
             )
         )
 
+
+
+
+NUM_POINTS_VIS = 2000
+NORMAL_VIS_LENGTH = 0.02
+
+# --- Helper Functions ---
+
+
+def normalize_vector(v, axis=-1, epsilon=1e-8):
+    norm = np.linalg.norm(v, axis=axis, keepdims=True)
+    return v / (norm + epsilon)
+
+
+# --- Main Visualization Logic ---
+
+
+def visualize_shadow_initial_contacts_normals():
+    """Loads Shadow Hand cloud, uses YOUR FK functions to show initial contacts and normals."""
+
+    # 2. Initialize Kinematics Model and Get Initial State
+    print("Initializing Shadow Kinematics Model...")
+    # These imports need to be resolvable
+    kin_model = AllegroKinematicsModel()
+    # --- Ensure using JAX array for theta ---
+    # Use the GUI to compare some initial joint values
+    
+    # initial_pose_jax = jnp.array(
+    #     kin_model.init_pregrasp_joint.value
+    # )  # Get initial pose
+    # print("  Using initial pre-grasp joint configuration.")
+
+    initial_pose_jax = jnp.zeros((16,))
+
+
+    # 4. Transform Contact Points and Calculate Normals using YOUR FK function
+    print("Transforming contact points and calculating normals using YOUR FK...")
+    local_contacts = kin_model.local_fingertip_contact_positions.value[:, 0, :]   # (4, 3)
+    # (4, 3)
+    local_normals = kin_model.fingertip_normals.value
+    # Local origin for normal calculation
+    local_origin = jnp.zeros((5, 3), dtype=jnp.float32)
+    fingertip_joint_indices = kin_model.fingertip_idx.value  # (4,)
+
+    world_contact_points_list = []
+    world_normal_vectors_list = []
+
+    # Use vmap for transforming points associated with each fingertip
+    # We need to transform 3 points per fingertip: contact point, origin, point along normal
+    @nnx.jit
+    def get_world_pts_for_link(theta, local_pts, joint_idx, model):
+        # Vmap over the points (contact, origin, point_on_normal) for a single link
+        return jax.vmap(
+            forward_kinematic_point_transform, in_axes=(None, 0, None, None)
+        )(theta, local_pts, joint_idx, model)
+
+
+    #TODO : visual finger tip points and their normals
+    for i in range(len(fingertip_joint_indices)):
+        joint_idx = fingertip_joint_indices[i]
+        local_point_contact = local_contacts[i]
+        local_point_origin = local_origin[i]
+        # Point along local normal from origin
+        local_point_on_normal = local_origin[i] + local_normals[i]
+
+        # Pack the three local points for this link
+        local_pts_for_link = jnp.stack(
+            [local_point_contact, local_point_origin, local_point_on_normal], axis=0
+        )  # Shape (3, 3)
+
+        # Transform these three points to world frame
+        world_pts = get_world_pts_for_link(
+            initial_pose_jax, local_pts_for_link, joint_idx, kin_model
+        )
+        world_contact = world_pts[0]
+        world_origin = world_pts[1]
+        world_point_on_normal = world_pts[2]
+
+        # Calculate world normal vector
+        world_normal = world_point_on_normal - world_origin
+
+        world_contact_points_list.append(np.array(world_contact))
+        world_normal_vectors_list.append(np.array(world_normal))
+
+    contact_points_np = np.array(world_contact_points_list)  # Shape (5, 3)
+    contact_normals_np = np.array(world_normal_vectors_list)  # Shape (5, 3)
+    # Normalize the calculated world normals
+    contact_normals_np = normalize_vector(contact_normals_np)
+    print(
+        f"  Transformed {len(contact_points_np)} contact points and normals using YOUR functions."
+    )
+
+    # 5. Prepare Plotly Visualization
+    print("Preparing visualization...")
+    plot_traces = []
+
+    # Trace for the transformed contact points
+    if contact_points_np.shape[0] > 0:
+        plot_traces.append(
+            go.Scatter3d(
+                x=contact_points_np[:, 0],
+                y=contact_points_np[:, 1],
+                z=contact_points_np[:, 2],
+                mode="markers",
+                marker=dict(size=5, color="blue", opacity=1.0),
+                name="Contact Points",
+            )
+        )
+        # Traces for the normals (as lines)
+        lines_x, lines_y, lines_z = [], [], []
+        for i in range(len(contact_points_np)):
+            p0 = contact_points_np[i]
+            p1 = p0 + contact_normals_np[i] * NORMAL_VIS_LENGTH
+            lines_x.extend([p0[0], p1[0], None])
+            lines_y.extend([p0[1], p1[1], None])
+            lines_z.extend([p0[2], p1[2], None])
+        plot_traces.append(
+            go.Scatter3d(
+                x=lines_x,
+                y=lines_y,
+                z=lines_z,
+                mode="lines",
+                line=dict(color="red", width=3),
+                name="Contact Normals",
+            )
+        )
+
+    # 6. Show Plot
+    fig = go.Figure(data=plot_traces)
+    fig.update_layout(
+        title="Allegro hand (Initial Pose) + Contact Points & Normals (Using Imported FK)",
+        scene=dict(
+            xaxis_title="X", yaxis_title="Y", zaxis_title="Z", aspectmode="data"
+        ),
+        margin=dict(l=0, r=0, b=0, t=40),
+    )
+    print("Showing plot...")
+    fig.show()
+
+
+if __name__ == "__main__":
+    visualize_shadow_initial_contacts_normals()
