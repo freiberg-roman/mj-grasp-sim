@@ -138,7 +138,7 @@ class AllegroKinematicsModel(nnx.Module, KinematicsModel):
                     [1.0, 0, 0],
                     [1.0, 0, 0],
                     [1.0, 0.0, 0],
-                    [0.0, 0.0, 1.0],
+                    [0.0, 1.0, 0.0],
                 ]
             )
         )
@@ -224,12 +224,12 @@ def visualize_shadow_initial_contacts_normals():
     # --- Ensure using JAX array for theta ---
     # Use the GUI to compare some initial joint values
     
-    # initial_pose_jax = jnp.array(
-    #     kin_model.init_pregrasp_joint.value
-    # )  # Get initial pose
-    # print("  Using initial pre-grasp joint configuration.")
+    initial_pose_jax = jnp.array(
+        kin_model.init_pregrasp_joint.value
+    )  # Get initial pose
+    print("  Using initial pre-grasp joint configuration.")
 
-    initial_pose_jax = jnp.zeros((16,))
+    # initial_pose_jax = jnp.zeros((16,))
 
 
     # 4. Transform Contact Points and Calculate Normals using YOUR FK function
