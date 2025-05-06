@@ -325,15 +325,6 @@ class ContactBasedDiff(GraspGenerator):
             name='Initial Finger Positions'
         ))
         
-        # Add hand base position
-        fig.add_trace(go.Scatter3d(
-            x=[initial_positions[0, 0]],
-            y=[initial_positions[0, 1]],
-            z=[initial_positions[0, 2]],
-            mode='markers',
-            marker=dict(size=12, color='orange', symbol='diamond'),
-            name='Hand Base Position'
-        ))
         
         
         for i in range(150):
@@ -373,29 +364,6 @@ class ContactBasedDiff(GraspGenerator):
                                     marker=dict(size=8, color='purple'),
                                     name='Optimized Contact Points'))
         
-        for i, (pt, norm) in enumerate(zip(transformed_points[0], contact_points_normals[0])):
-            end_pt = pt + scale * norm
-            fig.add_trace(go.Scatter3d(
-                x=[pt[0], end_pt[0]], 
-                y=[pt[1], end_pt[1]], 
-                z=[pt[2], end_pt[2]],
-                mode='lines',
-                line=dict(color='pink', width=4),
-                name=f'Normal {i}'
-            ))
-        # Configure layout
-        fig.update_layout(
-            scene=dict(
-                aspectmode='data',
-                xaxis_title='X',
-                yaxis_title='Y',
-                zaxis_title='Z'
-            ),
-            title="Target Contact Points and Initial Hand Pose",
-            width=800,
-            height=800,
-            legend=dict(x=0, y=0)
-        )
         
         fig.show()
 
