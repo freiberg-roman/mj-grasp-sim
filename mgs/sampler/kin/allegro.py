@@ -199,7 +199,7 @@ class AllegroKinematicsModel(nnx.Module, KinematicsModel):
 
 
 
-
+ALLEGRO_NPZ_FILE = "./mgs/sampler/kin/allegro_hand.npz"
 NUM_POINTS_VIS = 2000
 NORMAL_VIS_LENGTH = 0.02
 
@@ -216,6 +216,44 @@ def normalize_vector(v, axis=-1, epsilon=1e-8):
 
 def visualize_shadow_initial_contacts_normals():
     """Loads Shadow Hand cloud, uses YOUR FK functions to show initial contacts and normals."""
+    print(f"Loading gripper point cloud from: {ALLEGRO_NPZ_FILE}")
+    if not os.path.exists(ALLEGRO_NPZ_FILE):
+        print(f"ERROR: Not found {ALLEGRO_NPZ_FILE}")
+        return
+    raw = np.load(ALLEGRO_NPZ_FILE, allow_pickle=True)
+    points_full = raw["pcd_point"]
+    print(f"  Loaded {len(points_full)} points.")
+    np.random.seed(999)
+    if len(points_full) < NUM_POINTS_VIS:
+        random_idx = np.arange(len(points_full))
+    else:
+        random_idx = np.random.choice(
+            points_full.shape[0], size=NUM_POINTS_VIS, replace=False
+        )
+    points_vis_np = points_full[random_idx]
+    print(f"  Sampled {len(points_vis_np)} points.")
+    segmentation_keys_ordered = [
+        "ffj0",
+        "ffj1",
+        "ffj2",
+        "ffj3",
+        "mfj0", 
+        "mfj1", 
+        "mfj2",
+        "mfj3",
+        "rfj0",
+        "rfj1",
+        "rfj2",
+        "rfj3", 
+        "thj0",
+        "thj1",
+        "thj2",
+        "thj3" 
+    ]
+    segmentations_np = np.stack(
+        [raw[key][random_idx] for key in segmentation_keys_ordered]
+    )
+    print(f"  Loaded segmentations, shape: {segmentations_np.shape}")
 
     # 2. Initialize Kinematics Model and Get Initial State
     print("Initializing Shadow Kinematics Model...")
@@ -230,6 +268,24 @@ def visualize_shadow_initial_contacts_normals():
     print("  Using initial pre-grasp joint configuration.")
 
     # initial_pose_jax = jnp.zeros((16,))
+
+    # Convert inputs to JAX arrays
+    points_vis_jax = jnp.array(points_vis_np)
+    segmentations_jax = jnp.array(segmentations_np)
+
+    # 3. Transform Visualization Point Cloud using YOUR function
+    print(
+        "Transforming visualization point cloud using YOUR kinematic_pcd_transform..."
+    )
+    # Ensure kin_model is passed correctly (might need graph/state if using nnx.split elsewhere)
+    # Assuming kinematic_pcd_transform can take the model instance directly
+
+    #TODO: understand kinematic_pcd_transform doing
+    points_vis_transformed_jax = kinematic_pcd_transform(
+        points_vis_jax, initial_pose_jax, segmentations_jax, kin_model
+    )
+    points_vis_transformed_np = np.array(points_vis_transformed_jax)
+    print("  Transformed visualization point cloud.")
 
 
     # 4. Transform Contact Points and Calculate Normals using YOUR FK function
@@ -293,7 +349,19 @@ def visualize_shadow_initial_contacts_normals():
     print("Preparing visualization...")
     plot_traces = []
 
-    # Trace for the transformed contact points
+    # Trace for the transformed gripper point cloud
+    plot_traces.append(
+        go.Scatter3d(
+            x=points_vis_transformed_np[:, 0],
+            y=points_vis_transformed_np[:, 1],
+            z=points_vis_transformed_np[:, 2],
+            mode="markers",
+            marker=dict(size=2, color="grey", opacity=0.5),
+            name="Gripper Cloud (Initial Pose)",
+        )
+    )
+
+    #Trace for the transformed contact points
     if contact_points_np.shape[0] > 0:
         plot_traces.append(
             go.Scatter3d(
