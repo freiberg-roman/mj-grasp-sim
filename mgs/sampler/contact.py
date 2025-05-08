@@ -311,7 +311,7 @@ class ContactBasedDiff(GraspGenerator):
                 z=[pt[2], end_pt[2]],
                 mode='lines',
                 line=dict(color='red', width=4),
-                name=f'Normal {i}'
+                name=f'Target Normal {i}'
             ))
         
         # Add initial finger contact points
@@ -357,12 +357,39 @@ class ContactBasedDiff(GraspGenerator):
             + opt_state.pos.value[:, None, :]
         )
 
+        transformed_normals = nnx.vmap(
+            nnx.vmap(forward_kinematic_point_transform,
+                     in_axes=(None, 0, 0, None)),
+            in_axes=(0, None, None, None),
+        )(
+            opt_state.joints.value,
+            gripper.fingertip_normals.value,
+            gripper.fingertip_idx,
+            gripper,
+        )
+        transformed_normals = (
+            jnp.einsum("bij, bnj -> bni", rotation_6d_to_matrix(opt_state.rot.value),
+                       transformed_normals)
+            + opt_state.pos.value[:, None, :]
+        )
+
         fig.add_trace(go.Scatter3d(x=transformed_points[0, :, 0], 
                                     y=transformed_points[0, :, 1], 
                                     z=transformed_points[0, :, 2],
                                     mode='markers',
                                     marker=dict(size=8, color='purple'),
                                     name='Optimized Contact Points'))
+        
+        for i, (pt, norm) in enumerate(zip(transformed_points[0], transformed_normals[0])):
+            end_pt = pt + scale * norm
+            fig.add_trace(go.Scatter3d(
+                x=[pt[0], end_pt[0]], 
+                y=[pt[1], end_pt[1]], 
+                z=[pt[2], end_pt[2]],
+                mode='lines',
+                line=dict(color='pink', width=4),
+                name=f'Optimized Contact Normal {i}'
+        ))
         
         
         fig.show()
