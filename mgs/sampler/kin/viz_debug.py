@@ -1,0 +1,246 @@
+from functools import partial
+import jax
+from flax import nnx
+import jax.numpy as jnp
+import numpy as np
+import plotly.graph_objects as go
+from plotly.colors import qualitative
+
+ 
+from mgs.sampler.kin.jax_util import (
+    quaternion_apply_jax,
+    quaternion_from_axis_angle,
+    se3_raw_mupltiply,
+    similarity_transform,
+)
+
+@jax.jit
+def quat_to_rot_mat(q: jnp.ndarray) -> jnp.ndarray:
+    q = q / jnp.linalg.norm(q)
+    w, x, y, z = q[0], q[1], q[2], q[3]
+    ww = w * w
+    xx = x * x
+    yy = y * y
+    zz = z * z
+    wx = w * x
+    wy = w * y
+    wz = w * z
+    xy = x * y
+    xz = x * z
+    yz = y * z
+ 
+    R = jnp.array(
+        [
+            [ww + xx - yy - zz, 2.0 * (xy - wz), 2.0 * (xz + wy)],
+            [2.0 * (xy + wz), ww - xx + yy - zz, 2.0 * (yz - wx)],
+            [2.0 * (xz - wy), 2.0 * (yz + wx), ww - xx - yy + zz],
+        ]
+    )
+    return R
+ 
+ 
+@jax.jit
+def point_transform(
+    points: jnp.ndarray,
+    Ts: jnp.ndarray,
+    _: jnp.ndarray,
+):
+    q, t = Ts[..., :4], Ts[..., 4:]
+    return quaternion_apply_jax(q, points) + t
+ 
+ 
+ 
+@jax.jit
+def id_transform(
+    _: jnp.ndarray,
+    Ts: jnp.ndarray,
+    Ts_world: jnp.ndarray,
+):
+    return se3_raw_mupltiply(Ts, Ts_world)
+ 
+ 
+@partial(jax.jit, static_argnums=0)
+def kinematic_transform(
+    transform,
+    data: jnp.ndarray,
+    theta: jnp.ndarray,
+    segmentation: jnp.ndarray,
+    gripper_kinematics_g,
+    gripper_kinematics_s,
+):
+    # unsqueeze segmentation to the data dimensions
+    additional_data_shapes = len(data.shape) - 1
+    segmentation = jnp.expand_dims(
+        segmentation,
+        axis=[
+            i
+            for i in range(
+                -1,
+                -additional_data_shapes - 1,
+                -1,
+            )
+        ],
+    )
+    gripper_kinematics = nnx.merge(gripper_kinematics_g, gripper_kinematics_s)
+    for chain in gripper_kinematics.kinematics_graph:
+        current_transform = gripper_kinematics.base_to_contact
+        current_delta = jnp.array([1.0, 0, 0, 0, 0, 0, 0])
+ 
+        for index in chain:
+            current_transform = se3_raw_mupltiply(
+                se3_raw_mupltiply(current_transform, current_delta),
+                gripper_kinematics.kinematics_transforms[index],
+            )
+            joint_theta = theta[index]
+            translation = gripper_kinematics.joint_transforms[index][:3] * joint_theta
+ 
+            joint_axis = gripper_kinematics.joint_transforms[index][3:]
+            axis_norm = jnp.linalg.norm(joint_axis)
+            rotation_quat = jnp.where(
+                axis_norm > 0,
+                quaternion_from_axis_angle(joint_axis, joint_theta),
+                jnp.array([1.0, 0.0, 0.0, 0.0]),
+            )
+            current_delta = jnp.concatenate([rotation_quat, translation], axis=-1)
+            mask = segmentation[index]
+            Ts = similarity_transform(current_transform, current_delta)
+            data = jnp.where(
+                mask,
+                transform(data, Ts, current_transform),
+                data,
+            )
+ 
+    return data
+ 
+ 
+@jax.jit
+def joint_segmentation(kin_g, kin_s):
+    kin = nnx.merge(kin_g, kin_s)
+    segmentation = jnp.full(
+        shape=(kin.num_dofs, kin.num_dofs),
+        fill_value=False,
+    )
+    counter = 0
+    for chain in kin.kinematics_graph:
+        for i in range(len(chain)):
+            segmentation = segmentation.at[counter, chain[i:]].set(True)
+            counter += 1
+    return segmentation
+ 
+ 
+@jax.jit
+def kinematic_frames(theta, kin_g, kin_s):
+    """
+    Returns
+        R     : (num_dofs, 3, 3)  world-space rotation matrix per joint
+        origin: (num_dofs, 3)     world-space position per joint
+    """
+    seg = joint_segmentation(kin_g, kin_s)
+    data = jnp.zeros(shape=(len(seg), 7))
+    Ts = kinematic_transform(id_transform, data, theta, seg, kin_g, kin_s)
+    quats = Ts[..., :4]
+    joints = Ts[..., 4:]
+    R = jax.vmap(quat_to_rot_mat)(quats)
+    return R, joints
+
+def viz_point_clouds(
+    point_clouds,
+    frames=None,
+    scale=0.01,
+    color_scheme="Plotly",
+    show=True,
+):
+    """
+    Visualise multiple point-clouds (each possibly of different size)
+    and an optional set of coordinate frames.
+ 
+    Parameters
+    ----------
+    point_clouds : Sequence[np.ndarray]
+        Iterable of (Ni, 3) arrays.
+    frames : Sequence[tuple[np.ndarray, np.ndarray]] | None
+        Iterable of (R, p) pairs, where
+            R : (3, 3) rotation / orientation matrix
+            p : (3,)   position of the frame origin
+        If None, no frames are shown.
+    scale : float, default 0.01
+        Half-length of the axis arrows that depict each frame.
+    color_scheme : str | Sequence[str], default "Plotly"
+        Either the name of a Plotly **qualitative** palette
+        (e.g. "Plotly", "D3", "Dark24"), or a list of HEX/RGB strings.
+    show : bool, default True
+        Whether to call ``fig.show()`` before returning.
+ 
+    Returns
+    -------
+    fig : plotly.graph_objects.Figure
+        The figure, so you can further tweak or save it.
+    """
+    # ── set up colours (one per cloud) ──────────────────────────────
+    if isinstance(color_scheme, str):
+        palette = qualitative.__dict__.get(color_scheme, qualitative.Plotly)
+    else:
+        palette = color_scheme
+    if len(palette) < len(point_clouds):
+        # repeat colours if the palette is shorter than the number of clouds
+        palette = (palette * (len(point_clouds) // len(palette) + 1))[
+            : len(point_clouds)
+        ]
+ 
+    fig = go.Figure()
+ 
+    # ── plot each point-cloud ───────────────────────────────────────
+    for idx, cloud in enumerate(point_clouds):
+        cloud = np.asarray(cloud)
+        fig.add_trace(
+            go.Scatter3d(
+                x=cloud[:, 0],
+                y=cloud[:, 1],
+                z=cloud[:, 2],
+                mode="markers",
+                marker=dict(size=3, color=palette[idx], opacity=0.85),
+                name=f"cloud {idx}",
+            )
+        )
+ 
+    # ── plot frames (tiny RGB arrows) ───────────────────────────────
+    if frames is not None:
+        for R, p in frames:
+            R = np.asarray(R)
+            p = np.asarray(p)
+            if R.shape != (3, 3) or p.shape != (3,):
+                raise ValueError("Each frame must be (R (3×3), p (3,))")
+            axes = [
+                ("red", R[:, 0]),  # x
+                ("green", R[:, 1]),  # y
+                ("blue", R[:, 2]),
+            ]  # z
+            for colour, axis_vec in axes:
+                q = p + axis_vec * scale
+                fig.add_trace(
+                    go.Scatter3d(
+                        x=[p[0], q[0]],
+                        y=[p[1], q[1]],
+                        z=[p[2], q[2]],
+                        mode="lines",
+                        line=dict(color=colour, width=4),
+                        showlegend=False,
+                    )
+                )
+ 
+    # ── layout & return ────────────────────────────────────────────
+    fig.update_layout(
+        scene=dict(
+            aspectmode="data",
+            xaxis_title="X",
+            yaxis_title="Y",
+            zaxis_title="Z",
+        ),
+        margin=dict(l=0, r=0, b=0, t=30),
+    )
+    if show:
+        fig.show()
+ 
+    return fig
+
+
