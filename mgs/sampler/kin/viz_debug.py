@@ -5,6 +5,8 @@ import jax.numpy as jnp
 import numpy as np
 import plotly.graph_objects as go
 from plotly.colors import qualitative
+from mgs.sampler.kin.allegro import AllegroKinematicsModel
+from mgs.sampler.kin.base import KinematicsModel
 
  
 from mgs.sampler.kin.jax_util import (
@@ -14,7 +16,7 @@ from mgs.sampler.kin.jax_util import (
     similarity_transform,
 )
 
-@jax.jit
+
 def quat_to_rot_mat(q: jnp.ndarray) -> jnp.ndarray:
     q = q / jnp.linalg.norm(q)
     w, x, y, z = q[0], q[1], q[2], q[3]
@@ -39,7 +41,6 @@ def quat_to_rot_mat(q: jnp.ndarray) -> jnp.ndarray:
     return R
  
  
-@jax.jit
 def point_transform(
     points: jnp.ndarray,
     Ts: jnp.ndarray,
@@ -50,7 +51,6 @@ def point_transform(
  
  
  
-@jax.jit
 def id_transform(
     _: jnp.ndarray,
     Ts: jnp.ndarray,
@@ -59,14 +59,12 @@ def id_transform(
     return se3_raw_mupltiply(Ts, Ts_world)
  
  
-@partial(jax.jit, static_argnums=0)
 def kinematic_transform(
     transform,
     data: jnp.ndarray,
     theta: jnp.ndarray,
     segmentation: jnp.ndarray,
-    gripper_kinematics_g,
-    gripper_kinematics_s,
+    gripper_kinematics : KinematicsModel
 ):
     # unsqueeze segmentation to the data dimensions
     additional_data_shapes = len(data.shape) - 1
@@ -81,7 +79,7 @@ def kinematic_transform(
             )
         ],
     )
-    gripper_kinematics = nnx.merge(gripper_kinematics_g, gripper_kinematics_s)
+
     for chain in gripper_kinematics.kinematics_graph:
         current_transform = gripper_kinematics.base_to_contact
         current_delta = jnp.array([1.0, 0, 0, 0, 0, 0, 0])
@@ -112,10 +110,8 @@ def kinematic_transform(
  
     return data
  
- 
-@jax.jit
-def joint_segmentation(kin_g, kin_s):
-    kin = nnx.merge(kin_g, kin_s)
+
+def joint_segmentation(kin):
     segmentation = jnp.full(
         shape=(kin.num_dofs, kin.num_dofs),
         fill_value=False,
@@ -128,26 +124,23 @@ def joint_segmentation(kin_g, kin_s):
     return segmentation
  
  
-@jax.jit
-def kinematic_frames(theta, kin_g, kin_s):
+def kinematic_frames(theta, kin):
     """
     Returns
         R     : (num_dofs, 3, 3)  world-space rotation matrix per joint
         origin: (num_dofs, 3)     world-space position per joint
     """
-    seg = joint_segmentation(kin_g, kin_s)
+    seg = joint_segmentation(kin)
     data = jnp.zeros(shape=(len(seg), 7))
-    Ts = kinematic_transform(id_transform, data, theta, seg, kin_g, kin_s)
+    Ts = kinematic_transform(id_transform, data, theta, seg, kin)
     quats = Ts[..., :4]
     joints = Ts[..., 4:]
     R = jax.vmap(quat_to_rot_mat)(quats)
     return R, joints
 
 def viz_point_clouds(
-    point_clouds,
     frames=None,
     scale=0.01,
-    color_scheme="Plotly",
     show=True,
 ):
     """
@@ -177,31 +170,31 @@ def viz_point_clouds(
         The figure, so you can further tweak or save it.
     """
     # ── set up colours (one per cloud) ──────────────────────────────
-    if isinstance(color_scheme, str):
-        palette = qualitative.__dict__.get(color_scheme, qualitative.Plotly)
-    else:
-        palette = color_scheme
-    if len(palette) < len(point_clouds):
-        # repeat colours if the palette is shorter than the number of clouds
-        palette = (palette * (len(point_clouds) // len(palette) + 1))[
-            : len(point_clouds)
-        ]
+    # if isinstance(color_scheme, str):
+    #     palette = qualitative.__dict__.get(color_scheme, qualitative.Plotly)
+    # else:
+    #     palette = color_scheme
+    # if len(palette) < len(point_clouds):
+    #     # repeat colours if the palette is shorter than the number of clouds
+    #     palette = (palette * (len(point_clouds) // len(palette) + 1))[
+    #         : len(point_clouds)
+    #     ]
  
     fig = go.Figure()
  
     # ── plot each point-cloud ───────────────────────────────────────
-    for idx, cloud in enumerate(point_clouds):
-        cloud = np.asarray(cloud)
-        fig.add_trace(
-            go.Scatter3d(
-                x=cloud[:, 0],
-                y=cloud[:, 1],
-                z=cloud[:, 2],
-                mode="markers",
-                marker=dict(size=3, color=palette[idx], opacity=0.85),
-                name=f"cloud {idx}",
-            )
-        )
+    # for idx, cloud in enumerate(point_clouds):
+    #     cloud = np.asarray(cloud)
+    #     fig.add_trace(
+    #         go.Scatter3d(
+    #             x=cloud[:, 0],
+    #             y=cloud[:, 1],
+    #             z=cloud[:, 2],
+    #             mode="markers",
+    #             marker=dict(size=3, color=palette[idx], opacity=0.85),
+    #             name=f"cloud {idx}",
+    #         )
+    #     )
  
     # ── plot frames (tiny RGB arrows) ───────────────────────────────
     if frames is not None:
@@ -244,3 +237,59 @@ def viz_point_clouds(
     return fig
 
 
+
+
+kin = AllegroKinematicsModel()
+theta = jnp.zeros((16, ))
+
+R, joints = kinematic_frames(theta, kin)
+assert(R.shape[0] == joints.shape[0])
+
+frames = [(R[i], joints[i]) for i in range(R.shape[0])]
+
+viz_point_clouds(frames)
+
+# ALLEGRO_NPZ_FILE = "./mgs/sampler/kin/allegro_hand.npz"
+# NUM_POINTS_VIS = 2000
+# NORMAL_VIS_LENGTH = 0.02
+
+# print(f"Loading gripper point cloud from: {ALLEGRO_NPZ_FILE}")
+# raw = np.load(ALLEGRO_NPZ_FILE, allow_pickle=True)
+# points_full = raw["pcd_point"]
+# print(f"  Loaded {len(points_full)} points.")
+# if len(points_full) < NUM_POINTS_VIS:
+#     random_idx = np.arange(len(points_full))
+# else:
+#     random_idx = np.random.choice(
+#         points_full.shape[0], size=NUM_POINTS_VIS, replace=False
+#     )
+# points_vis_np = points_full[random_idx]
+# print(f"  Sampled {len(points_vis_np)} points.")
+# segmentation_keys_ordered = [
+#     "ffj0",
+#     "ffj1",
+#     "ffj2",
+#     "ffj3",
+#     "mfj0", 
+#     "mfj1", 
+#     "mfj2",
+#     "mfj3",
+#     "rfj0",
+#     "rfj1",
+#     "rfj2",
+#     "rfj3", 
+#     "thj0",
+#     "thj1",
+#     "thj2",
+#     "thj3" 
+# ]
+# segmentations_np = np.stack(
+#     [raw[key][random_idx] for key in segmentation_keys_ordered]
+# )
+# print(f"  Loaded segmentations, shape: {segmentations_np.shape}")
+
+
+
+
+
+    
