@@ -6,7 +6,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.colors import qualitative
 from mgs.sampler.kin.allegro import AllegroKinematicsModel
-from mgs.sampler.kin.base import KinematicsModel
+from mgs.sampler.kin.base import KinematicsModel, kinematic_pcd_transform
 
  
 from mgs.sampler.kin.jax_util import (
@@ -139,8 +139,10 @@ def kinematic_frames(theta, kin):
     return R, joints
 
 def viz_point_clouds(
+    point_clouds,
     frames=None,
     scale=0.01,
+    color_scheme="Plotly",
     show=True,
 ):
     """
@@ -170,31 +172,31 @@ def viz_point_clouds(
         The figure, so you can further tweak or save it.
     """
     # ── set up colours (one per cloud) ──────────────────────────────
-    # if isinstance(color_scheme, str):
-    #     palette = qualitative.__dict__.get(color_scheme, qualitative.Plotly)
-    # else:
-    #     palette = color_scheme
-    # if len(palette) < len(point_clouds):
-    #     # repeat colours if the palette is shorter than the number of clouds
-    #     palette = (palette * (len(point_clouds) // len(palette) + 1))[
-    #         : len(point_clouds)
-    #     ]
+    if isinstance(color_scheme, str):
+        palette = qualitative.__dict__.get(color_scheme, qualitative.Plotly)
+    else:
+        palette = color_scheme
+    if len(palette) < len(point_clouds):
+        # repeat colours if the palette is shorter than the number of clouds
+        palette = (palette * (len(point_clouds) // len(palette) + 1))[
+            : len(point_clouds)
+        ]
  
     fig = go.Figure()
  
-    # ── plot each point-cloud ───────────────────────────────────────
-    # for idx, cloud in enumerate(point_clouds):
-    #     cloud = np.asarray(cloud)
-    #     fig.add_trace(
-    #         go.Scatter3d(
-    #             x=cloud[:, 0],
-    #             y=cloud[:, 1],
-    #             z=cloud[:, 2],
-    #             mode="markers",
-    #             marker=dict(size=3, color=palette[idx], opacity=0.85),
-    #             name=f"cloud {idx}",
-    #         )
-    #     )
+    #── plot each point-cloud ───────────────────────────────────────
+    for idx, cloud in enumerate(point_clouds):
+        cloud = np.asarray(cloud)
+        fig.add_trace(
+            go.Scatter3d(
+                x=cloud[:, 0],
+                y=cloud[:, 1],
+                z=cloud[:, 2],
+                mode="markers",
+                marker=dict(size=3, color=palette[idx], opacity=0.85),
+                name=f"cloud {idx}",
+            )
+        )
  
     # ── plot frames (tiny RGB arrows) ───────────────────────────────
     if frames is not None:
@@ -240,53 +242,89 @@ def viz_point_clouds(
 
 
 kin = AllegroKinematicsModel()
-theta = jnp.zeros((16, ))
+theta = jnp.array(
+    kin.init_pregrasp_joint.value
+)
+
+theta = jnp.array([0.0, 1.0] + [0.0] * 14)
+
+theta = jnp.array(
+    [
+        -0.08,
+        0.95,
+        1,
+        0.95,
+        0,
+        0.95,
+        1.2,
+        0.85,
+        0.08,
+        0.95,
+        1.2,
+        0.9,
+        1.4,
+        0.55,
+        0.29,
+        1.45,
+    ]
+)
 
 R, joints = kinematic_frames(theta, kin)
 assert(R.shape[0] == joints.shape[0])
 
 frames = [(R[i], joints[i]) for i in range(R.shape[0])]
 
-viz_point_clouds(frames)
 
-# ALLEGRO_NPZ_FILE = "./mgs/sampler/kin/allegro_hand.npz"
-# NUM_POINTS_VIS = 2000
-# NORMAL_VIS_LENGTH = 0.02
+ALLEGRO_NPZ_FILE = "./mgs/sampler/kin/allegro_hand.npz"
+NUM_POINTS_VIS = 2000
+NORMAL_VIS_LENGTH = 0.02
 
-# print(f"Loading gripper point cloud from: {ALLEGRO_NPZ_FILE}")
-# raw = np.load(ALLEGRO_NPZ_FILE, allow_pickle=True)
-# points_full = raw["pcd_point"]
-# print(f"  Loaded {len(points_full)} points.")
-# if len(points_full) < NUM_POINTS_VIS:
-#     random_idx = np.arange(len(points_full))
-# else:
-#     random_idx = np.random.choice(
-#         points_full.shape[0], size=NUM_POINTS_VIS, replace=False
-#     )
-# points_vis_np = points_full[random_idx]
-# print(f"  Sampled {len(points_vis_np)} points.")
-# segmentation_keys_ordered = [
-#     "ffj0",
-#     "ffj1",
-#     "ffj2",
-#     "ffj3",
-#     "mfj0", 
-#     "mfj1", 
-#     "mfj2",
-#     "mfj3",
-#     "rfj0",
-#     "rfj1",
-#     "rfj2",
-#     "rfj3", 
-#     "thj0",
-#     "thj1",
-#     "thj2",
-#     "thj3" 
-# ]
-# segmentations_np = np.stack(
-#     [raw[key][random_idx] for key in segmentation_keys_ordered]
-# )
-# print(f"  Loaded segmentations, shape: {segmentations_np.shape}")
+print(f"Loading gripper point cloud from: {ALLEGRO_NPZ_FILE}")
+raw = np.load(ALLEGRO_NPZ_FILE, allow_pickle=True)
+points_full = raw["pcd_point"]
+print(f"  Loaded {len(points_full)} points.")
+if len(points_full) < NUM_POINTS_VIS:
+    random_idx = np.arange(len(points_full))
+else:
+    random_idx = np.random.choice(
+        points_full.shape[0], size=NUM_POINTS_VIS, replace=False
+    )
+points_vis_np = points_full[random_idx]
+print(f"  Sampled {len(points_vis_np)} points.")
+segmentation_keys_ordered = [
+    "ffj0",
+    "ffj1",
+    "ffj2",
+    "ffj3",
+    "mfj0", 
+    "mfj1", 
+    "mfj2",
+    "mfj3",
+    "rfj0",
+    "rfj1",
+    "rfj2",
+    "rfj3", 
+    "thj0",
+    "thj1",
+    "thj2",
+    "thj3" 
+]
+segmentations_np = np.stack(
+    [raw[key][random_idx] for key in segmentation_keys_ordered]
+)
+print(f"  Loaded segmentations, shape: {segmentations_np.shape}")
+
+points_vis_jax = jnp.array(points_vis_np)
+segmentations_jax = jnp.array(segmentations_np)
+
+points_vis_transformed_jax = kinematic_pcd_transform(
+        points_vis_jax, theta, segmentations_jax, kin
+)
+
+points_vis_transformed_np = np.array(points_vis_transformed_jax)
+
+viz_point_clouds([points_vis_transformed_np], frames)
+
 
 
 
