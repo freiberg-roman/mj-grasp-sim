@@ -339,12 +339,7 @@ class GripperAllegro(MjShakableOpenCloseGripper, MjScannable):
         )
 
     def base_to_contact_transform(self) -> SE3Pose:
-        theta = -np.pi / 2.0
-        rot_offset = SE3Pose(np.array([0, 0, 0]), np.array([np.cos(theta / 2.0), 0.0, np.sin(theta / 2.0), 0.0]), type="wxyz")  # type: ignore
-        offset = rot_offset @ SE3Pose(
-            np.array([-0.08, 0.0, 0.01]), np.array([1.0, 0, 0, 0]), type="wxyz"
-        )
-        return SE3Pose(offset.pos, np.array([np.cos(theta / 2.0), 0.0, np.sin(theta / 2.0), 0.0]), type="wxyz")  # type: ignore
+        return SE3Pose(pos=np.array([0.0, 0.0, 0.0]), quat=np.array([1.0, 0.0, 0.0, 0.0]), type="wxyz")
 
     def open_gripper(self, sim: MjSimulation):
         gripper_idxs = sim.get_joint_idxs(self.get_actuator_joint_names())
