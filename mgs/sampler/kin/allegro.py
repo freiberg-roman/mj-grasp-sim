@@ -34,7 +34,7 @@ class AllegroKinematicsModel(nnx.Module, KinematicsModel):
             [12, 13, 14, 15],  # tha
         ]
         self.base_to_contact = nnx.Variable(
-            base_to_contact_transform_allegro()
+            jnp.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         )
 
         # Ask
@@ -137,10 +137,10 @@ class AllegroKinematicsModel(nnx.Module, KinematicsModel):
         self.fingertip_normals = nnx.Variable(
             jnp.array(
                 [
-                    [1.0, 0, 0],
-                    [1.0, 0, 0],
-                    [1.0, 0.0, 0],
-                    [0.0, 1.0, 0.0],
+                    [-1.0, 0, 0],
+                    [-1.0, 0, 0],
+                    [-1.0, 0.0, 0],
+                    [-1.0, 0.0, 0.0],
                 ]
             )
         )
@@ -154,22 +154,22 @@ class AllegroKinematicsModel(nnx.Module, KinematicsModel):
             jnp.array(
                 [
                     [
-                        [0, 0, 0.01],
+                        [0.0, 0, 0.02],
                         [0.01, 0, 0.01],
                         [-0.01, 0, 0.01],
                     ],
                     [
-                        [0, 0, 0.01],
+                        [0, 0, 0.02],
+                        [0.01, 0, 0.01],
+                        [0.01, 0, 0.01],
+                    ],
+                    [
+                        [0, 0, 0.02],
                         [0.01, 0, 0.01],
                         [-0.01, 0, 0.01],
                     ],
                     [
-                        [0, 0, 0.01],
-                        [0.01, 0, 0.01],
-                        [-0.01, 0, 0.01],
-                    ],
-                    [
-                        [0, 0, 0.01],
+                        [0, 0, 0.03],
                         [0.01, 0, 0.01],
                         [-0.01, 0, 0.01],
                     ],
@@ -200,15 +200,7 @@ class AllegroKinematicsModel(nnx.Module, KinematicsModel):
         )
 
 
-def base_to_contact_transform_allegro():
-    theta = -np.pi / 2.0
-    rot_offset = SE3Pose(np.array([0, 0, 0]), np.array([np.cos(theta / 2.0), 0.0, np.sin(theta / 2.0), 0.0]), type="wxyz")  # type: ignore
-    offset = rot_offset @ SE3Pose(
-        np.array([-0.08, 0.0, 0.01]), np.array([1.0, 0, 0, 0]), type="wxyz"
-    )
-    return SE3Pose(offset.pos, np.array([np.cos(theta / 2.0), 0.0, np.sin(theta / 2.0), 0.0]), type="wxyz").to_vec(layout="qp")  # type: ignore
-
-ALLEGRO_NPZ_FILE = "./mgs/sampler/kin/allegro_hand.npz"
+ALLEGRO_NPZ_FILE = "./allegro_hand.npz"
 NUM_POINTS_VIS = 2000
 NORMAL_VIS_LENGTH = 0.02
 
@@ -232,7 +224,7 @@ def visualize_shadow_initial_contacts_normals():
     raw = np.load(ALLEGRO_NPZ_FILE, allow_pickle=True)
     points_full = raw["pcd_point"]
     print(f"  Loaded {len(points_full)} points.")
-    np.random.seed(999)
+    np.random.seed(100)
     if len(points_full) < NUM_POINTS_VIS:
         random_idx = np.arange(len(points_full))
     else:
