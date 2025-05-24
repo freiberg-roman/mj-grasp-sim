@@ -294,12 +294,12 @@ class ContactBasedDiff(GraspGenerator):
                                 color='lightgray', opacity=0.5))
         
         # Kin transform the pointcloud
-        SHADOW_NPZ_FILE = "./mgs/sampler/kin/gripper_shadow.npz"
+        ALLEGRO_NPZ_FILE = "./allegro_hand.npz"
         NUM_POINTS_VIS = 2000
         NORMAL_VIS_LENGTH = 0.02
 
-        print(f"Loading gripper point cloud from: {SHADOW_NPZ_FILE}")
-        raw = np.load(SHADOW_NPZ_FILE, allow_pickle=True)
+        print(f"Loading gripper point cloud from: {ALLEGRO_NPZ_FILE}")
+        raw = np.load(ALLEGRO_NPZ_FILE, allow_pickle=True)
         points_full = raw["pcd_point"]
         print(f"  Loaded {len(points_full)} points.")
         if len(points_full) < NUM_POINTS_VIS:
@@ -311,28 +311,22 @@ class ContactBasedDiff(GraspGenerator):
         points_vis_np = points_full[random_idx]
         print(f"  Sampled {len(points_vis_np)} points.")
         segmentation_keys_ordered = [
-            "ff_j4",
-            "ff_j3",
-            "ff_j2",
-            "ff_j1",
-            "mf_j4",
-            "mf_j3",
-            "mf_j2",
-            "mf_j1",
-            "rf_j4",
-            "rf_j3",
-            "rf_j2",
-            "rf_j1",
-            "lf_j5",
-            "lf_j4",
-            "lf_j3",
-            "lf_j2",
-            "lf_j1",
-            "th_j5",
-            "th_j4",
-            "th_j3",
-            "th_j2",
-            "th_j1",
+            "ffj0",
+            "ffj1",
+            "ffj2",
+            "ffj3",
+            "mfj0", 
+            "mfj1", 
+            "mfj2",
+            "mfj3",
+            "rfj0",
+            "rfj1",
+            "rfj2",
+            "rfj3", 
+            "thj0",
+            "thj1",
+            "thj2",
+            "thj3" 
         ]
         segmentations_np = np.stack(
             [raw[key][random_idx] for key in segmentation_keys_ordered]
@@ -342,12 +336,6 @@ class ContactBasedDiff(GraspGenerator):
         points_vis_jax = jnp.array(points_vis_np)
         segmentations_jax = jnp.array(segmentations_np)
         theta = jnp.array(gripper.init_pregrasp_joint)
-
-        rot = initial_rotations[0]
-        trans_col = initial_positions[0].reshape(3, 1)
-        transform_3x4 = np.concatenate([rot, trans_col], axis = -1)
-        bottom_row = np.array([0, 0, 0,1])
-        transform_4x4 = np.vstack([transform_3x4, bottom_row])
 
         # gripper.base_to_contact = nnx.Variable(
         #     SE3Pose.from_mat(transform_4x4, type="wxyz").to_vec(layout="qp")   
