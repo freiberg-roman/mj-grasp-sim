@@ -37,11 +37,13 @@ class AllegroKinematicsModel(nnx.Module, KinematicsModel):
             jnp.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         )
 
-        # Ask
+        # Rotate around y axis pi/2 
         self.align_to_approach = nnx.Variable(
             (
-                jnp.array([[1.0, 0, 0], [0, 1.0, 0], [0, 0, 1.0]]),
-                jnp.array([0, 0, 0.0]),
+                jnp.array([[np.cos(-np.pi / 2), 0, -np.sin(-np.pi /2)], 
+                           [0, 1.0, 0], 
+                           [np.sin(-np.pi / 2), 0, np.cos(-np.pi / 2)]]),
+                jnp.array([+0.01, 0.0, +0.08]),
             )
         )
 
