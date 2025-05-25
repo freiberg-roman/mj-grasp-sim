@@ -337,9 +337,6 @@ class ContactBasedDiff(GraspGenerator):
         segmentations_jax = jnp.array(segmentations_np)
         theta = jnp.array(gripper.init_pregrasp_joint)
 
-        # gripper.base_to_contact = nnx.Variable(
-        #     SE3Pose.from_mat(transform_4x4, type="wxyz").to_vec(layout="qp")   
-        # )
         points_vis_transformed_jax = kinematic_pcd_transform(
             points_vis_jax, theta, segmentations_jax, gripper
         )
@@ -362,31 +359,33 @@ class ContactBasedDiff(GraspGenerator):
             )
         )
 
+        
+
 
         
         # # Add target contact points
-        # print(contact_points_for_seeds_offset.shape)
-        # contact_pts = contact_points_for_seeds_offset[0]  # For the first grasp
-        # fig.add_trace(go.Scatter3d(x=target_points[0, :, 0], 
-        #                             y=target_points[0, :, 1], 
-        #                             z=target_points[0, :, 2],
-        #                             mode='markers',
-        #                             marker=dict(size=8, color='blue'),
-        #                             name='Target Contact Points'))
+        print(contact_points_for_seeds_offset.shape)
+        contact_pts = contact_points_for_seeds_offset[0]  # For the first grasp
+        fig.add_trace(go.Scatter3d(x=target_points[0, :, 0], 
+                                    y=target_points[0, :, 1], 
+                                    z=target_points[0, :, 2],
+                                    mode='markers',
+                                    marker=dict(size=8, color='blue'),
+                                    name='Target Contact Points'))
         
-        # # Add normals at contact points
-        # normals = contact_points_normals[0]
-        # scale = 0.03  # Scale for normal visualization
-        # for i, (pt, norm) in enumerate(zip(contact_pts, normals)):
-        #     end_pt = pt + scale * norm
-        #     fig.add_trace(go.Scatter3d(
-        #         x=[pt[0], end_pt[0]], 
-        #         y=[pt[1], end_pt[1]], 
-        #         z=[pt[2], end_pt[2]],
-        #         mode='lines',
-        #         line=dict(color='red', width=4),
-        #         name=f'Target Normal {i}'
-        #     ))
+        # Add normals at contact points
+        normals = contact_points_normals[0]
+        scale = 0.03  # Scale for normal visualization
+        for i, (pt, norm) in enumerate(zip(contact_pts, normals)):
+            end_pt = pt + scale * norm
+            fig.add_trace(go.Scatter3d(
+                x=[pt[0], end_pt[0]], 
+                y=[pt[1], end_pt[1]], 
+                z=[pt[2], end_pt[2]],
+                mode='lines',
+                line=dict(color='red', width=4),
+                name=f'Target Normal {i}'
+            ))
         
         # Add initial finger contact points
         init_contacts = transformed_points[0]
@@ -401,7 +400,7 @@ class ContactBasedDiff(GraspGenerator):
         
         
         
-        for i in range(0):
+        for i in range(150):
             trainer.train_step(
                 gripper.local_fingertip_contact_positions[
                     jnp.arange(num_contact_points), idx, :
@@ -413,60 +412,60 @@ class ContactBasedDiff(GraspGenerator):
 
         #TODO visualize the same after optimization
     
-        # transformed_points = nnx.vmap(
-        #     nnx.vmap(forward_kinematic_point_transform,
-        #              in_axes=(None, 0, 0, None)),
-        #     in_axes=(0, None, None, None),
-        # )(
-        #     opt_state.joints.value,
-        #     gripper.local_fingertip_contact_positions[
-        #         jnp.arange(num_contact_points), idx, :
-        #     ],
-        #     gripper.fingertip_idx,
-        #     gripper,
-        # )
-        # transformed_points = (
-        #     jnp.einsum("bij, bnj -> bni", rotation_6d_to_matrix(opt_state.rot.value),
-        #                transformed_points)
-        #     + opt_state.pos.value[:, None, :]
-        # )
+        transformed_points = nnx.vmap(
+            nnx.vmap(forward_kinematic_point_transform,
+                     in_axes=(None, 0, 0, None)),
+            in_axes=(0, None, None, None),
+        )(
+            opt_state.joints.value,
+            gripper.local_fingertip_contact_positions[
+                jnp.arange(num_contact_points), idx, :
+            ],
+            gripper.fingertip_idx,
+            gripper,
+        )
+        transformed_points = (
+            jnp.einsum("bij, bnj -> bni", rotation_6d_to_matrix(opt_state.rot.value),
+                       transformed_points)
+            + opt_state.pos.value[:, None, :]
+        )
 
-        # transformed_normals = nnx.vmap(
-        #     nnx.vmap(forward_kinematic_point_transform,
-        #              in_axes=(None, 0, 0, None)),
-        #     in_axes=(0, None, None, None),
-        # )(
-        #     opt_state.joints.value,
-        #     gripper.fingertip_normals.value,
-        #     gripper.fingertip_idx,
-        #     gripper,
-        # )
-        # transformed_normals = (
-        #     jnp.einsum("bij, bnj -> bni", rotation_6d_to_matrix(opt_state.rot.value),
-        #                transformed_normals)
-        #     + opt_state.pos.value[:, None, :]
-        # )
+        transformed_normals = nnx.vmap(
+            nnx.vmap(forward_kinematic_point_transform,
+                     in_axes=(None, 0, 0, None)),
+            in_axes=(0, None, None, None),
+        )(
+            opt_state.joints.value,
+            gripper.fingertip_normals.value,
+            gripper.fingertip_idx,
+            gripper,
+        )
+        transformed_normals = (
+            jnp.einsum("bij, bnj -> bni", rotation_6d_to_matrix(opt_state.rot.value),
+                       transformed_normals)
+            + opt_state.pos.value[:, None, :]
+        )
 
-        # fig.add_trace(go.Scatter3d(x=transformed_points[0, :, 0], 
-        #                             y=transformed_points[0, :, 1], 
-        #                             z=transformed_points[0, :, 2],
-        #                             mode='markers',
-        #                             marker=dict(size=8, color='purple'),
-        #                             name='Optimized Contact Points'))
+        fig.add_trace(go.Scatter3d(x=transformed_points[0, :, 0], 
+                                    y=transformed_points[0, :, 1], 
+                                    z=transformed_points[0, :, 2],
+                                    mode='markers',
+                                    marker=dict(size=8, color='purple'),
+                                    name='Optimized Contact Points'))
         
-        # for i, (pt, norm) in enumerate(zip(transformed_points[0], transformed_normals[0])):
-        #     end_pt = pt + scale * norm
-        #     fig.add_trace(go.Scatter3d(
-        #         x=[pt[0], end_pt[0]], 
-        #         y=[pt[1], end_pt[1]], 
-        #         z=[pt[2], end_pt[2]],
-        #         mode='lines',
-        #         line=dict(color='pink', width=4),
-        #         name=f'Optimized Contact Normal {i}'
-        # ))
-        
+        for i, (pt, norm) in enumerate(zip(transformed_points[0], transformed_normals[0])):
+            end_pt = pt + scale * norm
+            fig.add_trace(go.Scatter3d(
+                x=[pt[0], end_pt[0]], 
+                y=[pt[1], end_pt[1]], 
+                z=[pt[2], end_pt[2]],
+                mode='lines',
+                line=dict(color='pink', width=4),
+                name=f'Optimized Contact Normal {i}'
+        ))
         
         fig.show()
+        
 
         
 
