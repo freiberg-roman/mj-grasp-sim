@@ -2,18 +2,14 @@ from mgs.sampler.kin.base import (
     kinematic_pcd_transform,
     forward_kinematic_point_transform,
 )
-from flax import nnx  # Assuming nnx is used
-import sys
+from flax import nnx
 from mgs.sampler.kin.jax_util import normalize_vector
 import plotly.graph_objects as go
 import numpy as np
 import os
 import jax.numpy as jnp
-import math
 import jax
 from mgs.sampler.kin.base import KinematicsModel
-from mgs.util.geo.transforms import SE3Pose
-
 
 
 class AllegroKinematicsModel(nnx.Module, KinematicsModel):
@@ -37,48 +33,54 @@ class AllegroKinematicsModel(nnx.Module, KinematicsModel):
             jnp.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         )
 
-        # Rotate around y axis pi/2 
         self.align_to_approach = nnx.Variable(
             (
-                jnp.array([[np.cos(-np.pi / 2), 0, -np.sin(-np.pi /2)], 
-                           [0, 1.0, 0], 
-                           [np.sin(-np.pi / 2), 0, np.cos(-np.pi / 2)]]),
+                jnp.array(
+                    [
+                        [np.cos(-np.pi / 2), 0, -np.sin(-np.pi / 2)],
+                        [0, 1.0, 0],
+                        [np.sin(-np.pi / 2), 0, np.cos(-np.pi / 2)],
+                    ]
+                ),
                 jnp.array([+0.01, 0.0, +0.08]),
             )
         )
-
 
         self.kinematics_transforms = nnx.Variable(
             jnp.array(
                 [
                     # FF
-                    # ffj0 is the base of ffj1, ffj1 is the base of ffj2, etc.
-                    [0.999048, -0.0436194, 0, 0, 0, 0.0435, -0.001542], # ffj0
-                    [1, 0, 0, 0, 0, 0, 0.0164],  # ffj1  
+                    [0.999048, -0.0436194, 0, 0, 0, 0.0435, -0.001542],  # ffj0
+                    [1, 0, 0, 0, 0, 0, 0.0164],  # ffj1
                     [1, 0, 0, 0, 0, 0, 0.054],  # ffj2
                     [1, 0, 0, 0, 0, 0, 0.0384],  # ffj3
-
                     # MF
-                    [1.0, 0.0, 0.0, 0.0, 0, 0, 0.0007],  #mfj0
+                    [1.0, 0.0, 0.0, 0.0, 0, 0, 0.0007],  # mfj0
                     [1.0, 0.0, 0.0, 0.0, 0, 0, 0.0164],  # mfj1
                     [1.0, 0.0, 0.0, 0.0, 0, 0, 0.054],  # mfj2
                     [1.0, 0.0, 0.0, 0.0, 0, 0, 0.0384],  # mfj3
-                    
                     # RF
-                    [0.999048, 0.0436194, 0, 0, 0, -0.0435, -0.001542], # rfj0
+                    [0.999048, 0.0436194, 0, 0, 0, -0.0435, -0.001542],  # rfj0
                     [1, 0, 0, 0, 0, 0, 0.0164],  # rfj1
                     [1, 0, 0, 0, 0, 0, 0.054],  # rfj2
                     [1, 0, 0, 0, 0, 0, 0.0384],  # rfj3
-                    
                     # TH
-                    [0.477714, -0.521334, -0.521334, -0.477714, -0.0182, 0.019333, -0.045987],  # thj0
-                    [1, 0 ,0 ,0 ,-0.027, 0.005, 0.0399],  # thj1
+                    [
+                        0.477714,
+                        -0.521334,
+                        -0.521334,
+                        -0.477714,
+                        -0.0182,
+                        0.019333,
+                        -0.045987,
+                    ],  # thj0
+                    [1, 0, 0, 0, -0.027, 0.005, 0.0399],  # thj1
                     [1, 0, 0, 0, 0, 0, 0.0177],  # thj2
-                    [1, 0 ,0, 0, 0, 0, 0.0514],  # thj3
+                    [1, 0, 0, 0, 0, 0, 0.0514],  # thj3
                 ]
             )
         )
-        # a six-dimensional vector with a translational direction and rotation axis
+        
         self.joint_transforms = nnx.Variable(
             jnp.array(
                 [
@@ -97,7 +99,6 @@ class AllegroKinematicsModel(nnx.Module, KinematicsModel):
                     [0, 0, 0, 0, 1, 0],
                     [0, 0, 0, 0, 1, 0],
                     [0, 0, 0, 0, 1, 0],
-                 
                     # TH
                     [0, 0, 0, -1, 0, 0],
                     [0, 0, 0, 0, 0, 1],
@@ -125,7 +126,6 @@ class AllegroKinematicsModel(nnx.Module, KinematicsModel):
                     [-0.196, 1.61],
                     [-0.174, 1.709],
                     [-0.227, 1.618],
-        
                     # TH
                     [0.263, 1.396],
                     [-0.105, 1.163],
@@ -135,7 +135,6 @@ class AllegroKinematicsModel(nnx.Module, KinematicsModel):
             )
         )
 
-        # ask
         self.fingertip_normals = nnx.Variable(
             jnp.array(
                 [
@@ -147,11 +146,8 @@ class AllegroKinematicsModel(nnx.Module, KinematicsModel):
             )
         )
 
-        self.fingertip_idx = nnx.Variable(
-            jnp.array([3, 7, 11, 15], dtype=jnp.int32)
-        )
+        self.fingertip_idx = nnx.Variable(jnp.array([3, 7, 11, 15], dtype=jnp.int32))
 
-        # ask!!
         self.local_fingertip_contact_positions = nnx.Variable(
             jnp.array(
                 [
@@ -180,29 +176,29 @@ class AllegroKinematicsModel(nnx.Module, KinematicsModel):
         )
         self.init_pregrasp_joint = nnx.Variable(
             jnp.array(
-                 [
-                -0.08,
-                0.297,
-                0.710,
-                0.95,
-                0,
-                0.319,
-                0.71,
-                0.67,
-                0.08,
-                0.454,
-                0.710,
-                0.95,
-                1.06,
-                0.358,
-                0.251,
-                0.318,
+                [
+                    -0.08,
+                    0.297,
+                    0.710,
+                    0.95,
+                    0,
+                    0.319,
+                    0.71,
+                    0.67,
+                    0.08,
+                    0.454,
+                    0.710,
+                    0.95,
+                    1.06,
+                    0.358,
+                    0.251,
+                    0.318,
                 ]
             )
         )
 
 
-ALLEGRO_NPZ_FILE = "./allegro_hand.npz"
+ALLEGRO_NPZ_FILE = "./mgs/sampler/kin/allegro.npz"
 NUM_POINTS_VIS = 2000
 NORMAL_VIS_LENGTH = 0.02
 
@@ -217,8 +213,8 @@ def normalize_vector(v, axis=-1, epsilon=1e-8):
 # --- Main Visualization Logic ---
 
 
-def visualize_shadow_initial_contacts_normals():
-    """Loads Shadow Hand cloud, uses YOUR FK functions to show initial contacts and normals."""
+def visualize_allegro_initial_contacts_normals():
+    """Loads Allegro Hand cloud, uses YOUR FK functions to show initial contacts and normals."""
     print(f"Loading gripper point cloud from: {ALLEGRO_NPZ_FILE}")
     if not os.path.exists(ALLEGRO_NPZ_FILE):
         print(f"ERROR: Not found {ALLEGRO_NPZ_FILE}")
@@ -240,60 +236,54 @@ def visualize_shadow_initial_contacts_normals():
         "ffj1",
         "ffj2",
         "ffj3",
-        "mfj0", 
-        "mfj1", 
+        "mfj0",
+        "mfj1",
         "mfj2",
         "mfj3",
         "rfj0",
         "rfj1",
         "rfj2",
-        "rfj3", 
+        "rfj3",
         "thj0",
         "thj1",
         "thj2",
-        "thj3" 
+        "thj3",
     ]
     segmentations_np = np.stack(
         [raw[key][random_idx] for key in segmentation_keys_ordered]
     )
     print(f"  Loaded segmentations, shape: {segmentations_np.shape}")
-
-    # 2. Initialize Kinematics Model and Get Initial State
-    print("Initializing Shadow Kinematics Model...")
+    
     # These imports need to be resolvable
     kin_model = AllegroKinematicsModel()
-    # --- Ensure using JAX array for theta ---
-    # Use the GUI to compare some initial joint values
     
+    # Get initial pose
     initial_pose_jax = jnp.array(
         kin_model.init_pregrasp_joint.value
-    )  # Get initial pose
+    )  
     print("  Using initial pre-grasp joint configuration.")
-
-    # initial_pose_jax = jnp.zeros((16,))
 
     # Convert inputs to JAX arrays
     points_vis_jax = jnp.array(points_vis_np)
     segmentations_jax = jnp.array(segmentations_np)
 
-    # 3. Transform Visualization Point Cloud using YOUR function
     print(
         "Transforming visualization point cloud using YOUR kinematic_pcd_transform..."
     )
     # Ensure kin_model is passed correctly (might need graph/state if using nnx.split elsewhere)
     # Assuming kinematic_pcd_transform can take the model instance directly
-
-    #TODO: understand kinematic_pcd_transform doing
+    
     points_vis_transformed_jax = kinematic_pcd_transform(
         points_vis_jax, initial_pose_jax, segmentations_jax, kin_model
     )
     points_vis_transformed_np = np.array(points_vis_transformed_jax)
     print("  Transformed visualization point cloud.")
 
-
-    # 4. Transform Contact Points and Calculate Normals using YOUR FK function
+    # Transform Contact Points and Calculate Normals using YOUR FK function
     print("Transforming contact points and calculating normals using YOUR FK...")
-    local_contacts = kin_model.local_fingertip_contact_positions.value[:, 0, :]   # (4, 3)
+    local_contacts = kin_model.local_fingertip_contact_positions.value[
+        :, 0, :
+    ]  # (4, 3)
     # (4, 3)
     local_normals = kin_model.fingertip_normals.value
     # Local origin for normal calculation
@@ -312,8 +302,6 @@ def visualize_shadow_initial_contacts_normals():
             forward_kinematic_point_transform, in_axes=(None, 0, None, None)
         )(theta, local_pts, joint_idx, model)
 
-
-    #TODO : visual finger tip points and their normals
     for i in range(len(fingertip_joint_indices)):
         joint_idx = fingertip_joint_indices[i]
         local_point_contact = local_contacts[i]
@@ -348,7 +336,6 @@ def visualize_shadow_initial_contacts_normals():
         f"  Transformed {len(contact_points_np)} contact points and normals using YOUR functions."
     )
 
-    # 5. Prepare Plotly Visualization
     print("Preparing visualization...")
     plot_traces = []
 
@@ -364,7 +351,7 @@ def visualize_shadow_initial_contacts_normals():
         )
     )
 
-    #Trace for the transformed contact points
+    # Trace for the transformed contact points
     if contact_points_np.shape[0] > 0:
         plot_traces.append(
             go.Scatter3d(
@@ -395,7 +382,7 @@ def visualize_shadow_initial_contacts_normals():
             )
         )
 
-    # 6. Show Plot
+    # Show Plot
     fig = go.Figure(data=plot_traces)
     fig.update_layout(
         title="Allegro hand (Initial Pose) + Contact Points & Normals (Using Imported FK)",
@@ -409,4 +396,4 @@ def visualize_shadow_initial_contacts_normals():
 
 
 if __name__ == "__main__":
-    visualize_shadow_initial_contacts_normals()
+    visualize_allegro_initial_contacts_normals()

@@ -17,9 +17,8 @@ from mgs.sampler.kin.jax_util import (
     farthest_point_sampling,
     find_best_assignment_and_reorder_targets,
 )
-from mgs.sampler.kin.base import KinematicsModel, forward_kinematic_point_transform, kinematic_pcd_transform
+from mgs.sampler.kin.base import KinematicsModel, forward_kinematic_point_transform
 import jax.numpy as jnp
-import plotly.graph_objects as go
 from mgs.util.geo.transforms import SE3Pose
 
 NUM_SURFACE_SAMPLES = 30000
@@ -258,14 +257,12 @@ class ContactBasedDiff(GraspGenerator):
             gripper.fingertip_idx,
             gripper,
         )
-        print(transformed_points.shape)
         transformed_points = (
             jnp.einsum("bij, bnj -> bni", initial_rotations,
                        transformed_points)
             + initial_positions[:, None, :]
         )
 
-        print("Shape of transformed points ", transformed_points.shape)
         permutation_idx = list(
             permutations([i for i in range(len(gripper.fingertip_idx))])
         )
@@ -276,130 +273,8 @@ class ContactBasedDiff(GraspGenerator):
             transformed_points,
             contact_points_for_seeds_offset,
             permutation_idx,
-        )
-
-        #TODO visual target contact points on the object
-        # intial poses + joints related to the object
-
-        # Visualize target contact points on the object (before optimization)
-        # Create figure
-        fig = go.Figure()
-        
-        # Add mesh as wireframe
-        mesh_vertices = np.array(self.mesh.vertices)
-        mesh_faces = np.array(self.mesh.faces)
-        x, y, z = mesh_vertices.T
-        i, j, k = mesh_faces.T
-        fig.add_trace(go.Mesh3d(x=x, y=y, z=z, i=i, j=j, k=k, 
-                                color='lightgray', opacity=0.5))
-        
-        # Kin transform the pointcloud
-        ALLEGRO_NPZ_FILE = "./allegro_hand.npz"
-        NUM_POINTS_VIS = 2000
-        NORMAL_VIS_LENGTH = 0.02
-
-        print(f"Loading gripper point cloud from: {ALLEGRO_NPZ_FILE}")
-        raw = np.load(ALLEGRO_NPZ_FILE, allow_pickle=True)
-        points_full = raw["pcd_point"]
-        print(f"  Loaded {len(points_full)} points.")
-        if len(points_full) < NUM_POINTS_VIS:
-            random_idx = np.arange(len(points_full))
-        else:
-            random_idx = np.random.choice(
-                points_full.shape[0], size=NUM_POINTS_VIS, replace=False
-            )
-        points_vis_np = points_full[random_idx]
-        print(f"  Sampled {len(points_vis_np)} points.")
-        segmentation_keys_ordered = [
-            "ffj0",
-            "ffj1",
-            "ffj2",
-            "ffj3",
-            "mfj0", 
-            "mfj1", 
-            "mfj2",
-            "mfj3",
-            "rfj0",
-            "rfj1",
-            "rfj2",
-            "rfj3", 
-            "thj0",
-            "thj1",
-            "thj2",
-            "thj3" 
-        ]
-        segmentations_np = np.stack(
-            [raw[key][random_idx] for key in segmentation_keys_ordered]
-        )
-        print(f"  Loaded segmentations, shape: {segmentations_np.shape}")
-
-        points_vis_jax = jnp.array(points_vis_np)
-        segmentations_jax = jnp.array(segmentations_np)
-        theta = jnp.array(gripper.init_pregrasp_joint)
-
-        points_vis_transformed_jax = kinematic_pcd_transform(
-            points_vis_jax, theta, segmentations_jax, gripper
-        )
-
-        #visualize point cloud
-        
-        points_vis_transformed_jax = jnp.einsum("ij,nj->ni", initial_rotations[0], points_vis_transformed_jax) + initial_positions[0]
-        cloud = np.asarray(points_vis_transformed_jax)
-        
-        print("Shape of the point cloud ", cloud.shape)
-        print("Pcd moved with intial rotation and")
-        fig.add_trace(
-            go.Scatter3d(
-                x=cloud[:, 0],
-                y=cloud[:, 1],
-                z=cloud[:, 2],
-                mode="markers",
-                marker=dict(size=3, color='grey', opacity=0.85),
-                name=f"cloud {idx}",
-            )
-        )
-
-        
-
-
-        
-        # # Add target contact points
-        print(contact_points_for_seeds_offset.shape)
-        contact_pts = contact_points_for_seeds_offset[0]  # For the first grasp
-        fig.add_trace(go.Scatter3d(x=target_points[0, :, 0], 
-                                    y=target_points[0, :, 1], 
-                                    z=target_points[0, :, 2],
-                                    mode='markers',
-                                    marker=dict(size=8, color='blue'),
-                                    name='Target Contact Points'))
-        
-        # Add normals at contact points
-        normals = contact_points_normals[0]
-        scale = 0.03  # Scale for normal visualization
-        for i, (pt, norm) in enumerate(zip(contact_pts, normals)):
-            end_pt = pt + scale * norm
-            fig.add_trace(go.Scatter3d(
-                x=[pt[0], end_pt[0]], 
-                y=[pt[1], end_pt[1]], 
-                z=[pt[2], end_pt[2]],
-                mode='lines',
-                line=dict(color='red', width=4),
-                name=f'Target Normal {i}'
-            ))
-        
-        # Add initial finger contact points
-        init_contacts = transformed_points[0]
-        fig.add_trace(go.Scatter3d(
-            x=init_contacts[:, 0],
-            y=init_contacts[:, 1],
-            z=init_contacts[:, 2],
-            mode='markers',
-            marker=dict(size=8, color='green'),
-            name='Initial Finger Positions'
-        ))
-        
-        
-        
+        )        
+          
         for i in range(150):
             trainer.train_step(
                 gripper.local_fingertip_contact_positions[
@@ -408,66 +283,7 @@ class ContactBasedDiff(GraspGenerator):
                 (target_points, contact_points_normals),
             )
 
-        _, _ , opt_state = nnx.merge(trainer.train_graph, trainer.train_state)
-
-        #TODO visualize the same after optimization
-    
-        transformed_points = nnx.vmap(
-            nnx.vmap(forward_kinematic_point_transform,
-                     in_axes=(None, 0, 0, None)),
-            in_axes=(0, None, None, None),
-        )(
-            opt_state.joints.value,
-            gripper.local_fingertip_contact_positions[
-                jnp.arange(num_contact_points), idx, :
-            ],
-            gripper.fingertip_idx,
-            gripper,
-        )
-        transformed_points = (
-            jnp.einsum("bij, bnj -> bni", rotation_6d_to_matrix(opt_state.rot.value),
-                       transformed_points)
-            + opt_state.pos.value[:, None, :]
-        )
-
-        transformed_normals = nnx.vmap(
-            nnx.vmap(forward_kinematic_point_transform,
-                     in_axes=(None, 0, 0, None)),
-            in_axes=(0, None, None, None),
-        )(
-            opt_state.joints.value,
-            gripper.fingertip_normals.value,
-            gripper.fingertip_idx,
-            gripper,
-        )
-        transformed_normals = (
-            jnp.einsum("bij, bnj -> bni", rotation_6d_to_matrix(opt_state.rot.value),
-                       transformed_normals)
-            + opt_state.pos.value[:, None, :]
-        )
-
-        fig.add_trace(go.Scatter3d(x=transformed_points[0, :, 0], 
-                                    y=transformed_points[0, :, 1], 
-                                    z=transformed_points[0, :, 2],
-                                    mode='markers',
-                                    marker=dict(size=8, color='purple'),
-                                    name='Optimized Contact Points'))
-        
-        for i, (pt, norm) in enumerate(zip(transformed_points[0], transformed_normals[0])):
-            end_pt = pt + scale * norm
-            fig.add_trace(go.Scatter3d(
-                x=[pt[0], end_pt[0]], 
-                y=[pt[1], end_pt[1]], 
-                z=[pt[2], end_pt[2]],
-                mode='lines',
-                line=dict(color='pink', width=4),
-                name=f'Optimized Contact Normal {i}'
-        ))
-        
-        fig.show()
-        
-
-        
+        _, _ , opt_state = nnx.merge(trainer.train_graph, trainer.train_state)                
 
         rot = rotation_6d_to_matrix(opt_state.rot.value)
         trans = opt_state.pos.value
