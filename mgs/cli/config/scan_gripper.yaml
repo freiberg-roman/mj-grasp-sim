@@ -3,10 +3,10 @@
 
 defaults:
   - _self_
-  - gripper: google
+  - gripper: allegro
 
 qpos: ${gripper.qpos}
-file_id: "open"
+file_id: "allegro_hand2"
 num_images: 10
 debug: false
 

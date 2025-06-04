@@ -3,7 +3,7 @@
 
 defaults:
   - _self_
-  - gripper: panda
+  - gripper: allegro
   - object: subset_from_fast
   - env: clutter_table
 

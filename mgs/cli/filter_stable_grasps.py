@@ -13,6 +13,7 @@ from mgs.util.const import ASSET_PATH
 
 @hydra.main(config_path="config", config_name="filter_stable_grasps")
 def main(cfg: DictConfig):
+    os.chdir(hydra.utils.to_absolute_path("."))
     gripper = get_gripper(cfg.gripper)
     object_id_file = os.path.join(ASSET_PATH, "mj-objects", "fast_eta_objects.txt")
     with open(object_id_file, "r") as file:
@@ -26,8 +27,8 @@ def main(cfg: DictConfig):
     file_dir = os.getenv("MGS_INPUT_DIR")
     if file_dir is None:
         file_dir = "."
-    file_dir = os.path.abspath(os.path.join(file_dir, cfg.gripper.name, object_id))
-    file_path = os.path.join(file_dir, "candidates_collision_free.npz")
+    file_dir = "/home/ngh2rng/project/mj-grasp-sim/AllegroGripper/007_tuna_fish_can"
+    file_path = "/home/ngh2rng/project/mj-grasp-sim/AllegroGripper/007_tuna_fish_can/candidates_collision_free.npz"
 
     grasps = np.load(file_path)
     poses = grasps["pose"]

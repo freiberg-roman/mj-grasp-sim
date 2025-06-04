@@ -68,7 +68,7 @@ def main(cfg: DictConfig):
         segments[key] = mask
 
     file_hash = generate_unique_hash()
-    file_path = os.path.join(output_dir, f"{cfg.file_id}_{file_hash}")  # type: ignore
+    file_path = os.path.join(output_dir, f"{cfg.file_id}")  # type: ignore
     np.savez(
         file_path,
         **{

@@ -13,6 +13,7 @@ from mgs.util.const import ASSET_PATH
 
 @hydra.main(config_path="config", config_name="filter_collision_free_candidates")
 def main(cfg: DictConfig):
+    # os.chdir(hydra.utils.to_absolute_path("."))
     gripper = get_gripper(cfg.gripper)
     object_id_file = os.path.join(ASSET_PATH, "mj-objects", "fast_eta_objects.txt")
     with open(object_id_file, "r") as file:

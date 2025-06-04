@@ -3,10 +3,10 @@
 
 defaults:
   - _self_
-  - gripper: leap
+  - gripper: allegro
 
-num_grasps: 10000
-id: 0
+num_grasps: 1000
+id: 5
 
 hydra:
   job:
