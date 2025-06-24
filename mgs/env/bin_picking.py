@@ -253,7 +253,7 @@ class BinPickingEnv(MjScanEnv, Loadable):
             np.clip(self.data.qvel, -50.0, 50.0, out=self.data.qvel)
             mujoco.mj_step(self.model, self.data)  # type: ignore
 
-    def update_camera_settings(self):
+    def update_camera_settings(self, num_images, i):
         rnd_pos, _ = rnd_camera_pose_restricted(radius=1.2, phi=np.pi * 0.125)
         jnt_adr_start = self.model.jnt("camera:joint").qposadr[0].item()
         self.data.qpos[jnt_adr_start : jnt_adr_start + 3] = rnd_pos

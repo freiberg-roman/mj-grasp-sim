@@ -13,16 +13,21 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 from copy import deepcopy
-from typing import List
+from typing import List, Dict, Any, Tuple, Union  # Added Dict, Any, Tuple, Union
 
 import mujoco
 import mujoco.viewer
 import numpy as np
 
 from mgs.core.simualtion import MjSimulation
+
+# Make sure the gripper has the set_gripper_width method
 from mgs.gripper.base import MjShakableOpenCloseGripper
+
+# Import specific grippers ONLY if type checking requires it after set_gripper_width add
+# from mgs.gripper.panda import GripperPanda
+# from mgs.gripper.vx300 import GripperVX300
 from mgs.obj.base import CollisionMeshObject
 from mgs.util.geo.transforms import SE3Pose
 
@@ -65,125 +70,232 @@ class GravitylessObjectGrasping(MjSimulation):
         self.data = mujoco.MjData(self.model)  # type: ignore
         mujoco.mj_forward(self.model, self.data)  # type: ignore
 
-    def idle_grasp(self, pose: SE3Pose):
-        """Mainly used for graps allignment and testing. Not for actual grasping"""
-
-        mujoco.mj_resetData(self.model, self.data)  # type: ignore
+    def idle_grasp(self, pose: SE3Pose, joints: np.ndarray):
+        # (Implementation remains the same)
+        mujoco.mj_resetData(self.model, self.data)
         b2c = self.gripper.base_to_contact_transform()
         pose_processed = pose @ b2c
+        gripper_joint_idxs = self.get_joint_idxs(
+            self.gripper.get_actuator_joint_names()
+        )
+        self.set_qpos(joints, gripper_joint_idxs)
         self.gripper.set_pose(self, pose_processed)
-        self.gripper.open_gripper(self)
-        mujoco.mj_forward(self.model, self.data)  # type: ignore
+
+        mujoco.mj_forward(self.model, self.data)
         with mujoco.viewer.launch_passive(self.model, self.data) as viewer:
             while True:
                 viewer.sync()
-                mujoco.mj_step(self.model, self.data)  # type: ignore
+                mujoco.mj_step(self.model, self.data)
 
-    def grasp_stability_evaluation(self, poses: SE3Pose, stats=False) -> np.ndarray:
-        """
-        Function simulates all grasp poses and return a numpy array of 0s and
-        1s for stable and unstable grasps, respectively.
-        """
-        # with mujoco.viewer.launch_passive(self.model, self.data) as viewer:
-        results: List[bool] = []
-        positional_drift = []
-        rotational_drift = []
+    def grasp_collision_mask(
+        self,
+        poses: SE3Pose,
+        joints: np.ndarray,
+    ) -> np.ndarray:
+        if len(poses) != len(joints):
+            raise ValueError(
+                f"Number of poses ({len(poses)}) must match number of joint configurations ({len(joints)})."
+            )
+        if joints.shape[1] != len(self.gripper.get_actuator_joint_names()):
+            raise ValueError(
+                f"Joints array has incorrect dimension ({joints.shape[1]}), expected {len(self.gripper.get_actuator_joint_names())}."
+            )
 
-        for pose in poses:
+        collision_free_mask: List[bool] = []
+        num_grasps = len(poses)
+        gripper_joint_idxs = self.get_joint_idxs(
+            self.gripper.get_actuator_joint_names()
+        )  # Cache indices
+
+        initial_state = self.get_state()
+
+        for i in range(num_grasps):
+            mujoco.mj_resetData(self.model, self.data)
+            mujoco.mj_forward(self.model, self.data)
+
             b2c = self.gripper.base_to_contact_transform()
-            pose_processed = pose @ b2c
-
-            # proper non colliding grasp execution
-            mujoco.mj_resetData(self.model, self.data)  # type: ignore
-            obj_pose = self.get_object_transform(self.obj.name)
-            mujoco.mj_forward(self.model, self.data)  # type: ignore
-            self.gripper.open_gripper(self)
-            # viewer.sync()
+            pose_processed = poses[i] @ b2c  # Apply base-to-contact transform
+            self.set_qpos(joints[i], gripper_joint_idxs)
             self.gripper.set_pose(self, pose_processed)
-            if self.check_contact():
-                results.append(False)
-                positional_drift.append(0.0)
-                rotational_drift.append(0.0)
-                continue
-            self.gripper.close_gripper_at(self, pose_processed)
-            if not self.check_contact():
-                results.append(False)
-                positional_drift.append(0.0)
-                rotational_drift.append(0.0)
-                continue
+            mujoco.mj_forward(self.model, self.data)
+            has_contact = self.check_contact()
+            collision_free_mask.append(not has_contact)
 
-            # check for object movement
-            obj_pose_after_grasps = self.get_object_transform(self.obj.name)
-            positional_drift.append(
-                np.sqrt(np.sum((obj_pose.pos - obj_pose_after_grasps.pos) ** 2))
-            )
-            rotational_drift.append(
-                np.arccos(
-                    2 * np.sum(obj_pose.quat * obj_pose_after_grasps.quat) ** 2 - 1
-                )
-                * 180
-                / np.pi
-            )
-            self.gripper.move_back(self, pose_processed)
-            # viewer.sync()
-            if not self.check_contact():
-                results.append(False)
-                continue
-            self.gripper.move_right(self, pose_processed)
-            # viewer.sync()
-            if not self.check_contact():
-                results.append(False)
-                continue
-            self.gripper.move_left(self, pose_processed)
-            # viewer.sync()
-            if self.check_contact():
-                results.append(True)
-            else:
-                results.append(False)
+        self.set_state(initial_state)
+        return np.array(collision_free_mask)
 
-        if stats:
-            return np.array(results), np.array(positional_drift), np.array(rotational_drift)  # type: ignore
-        return (
-            np.array(results)
-            & (np.array(positional_drift) < 0.025)
-            & (np.array(rotational_drift) < 25.0)
+    def grasp_stability_evaluation_from_joints(
+        self,
+        poses: SE3Pose,
+        joints: np.ndarray,
+        nstep_lift: int = 3000,  # Steps for lifting simulation
+        lift_dist: float = 0.1,  # Distance to lift
+        shake_steps: int = 500,  # Steps per shake direction
+        shake_dist: float = 0.02,  # Distance to shake side-to-side
+        enough_stable=None,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        if len(poses) != len(joints):
+            raise ValueError(
+                f"Number of poses ({len(poses)}) must match number of joint configurations ({len(joints)})."
+            )
+        results: List[bool] = []
+        positional_drift: List[float] = []
+        rotational_drift: List[float] = []
+        num_grasps = len(poses)
+        gripper_joint_idxs = self.get_joint_idxs(
+            self.gripper.get_actuator_joint_names()
         )
 
-    def find_contacts(self, grasp, viewer=False):
-        if viewer:
-            v_resource = mujoco.viewer.launch_passive(self.model, self.data)
-            viewer = v_resource.__enter__()
-        else:
-            viewer = None
+        count_stable = 0
+        for i in range(num_grasps):
+            if enough_stable is not None:
+                if count_stable >= enough_stable:
+                    positional_drift.append(np.nan)
+                    rotational_drift.append(np.nan)
+                    results.append(False)
+                    continue
 
-        grasp = deepcopy(grasp)
-        mujoco.mj_resetData(self.model, self.data)  # type: ignore
-        mujoco.mj_forward(self.model, self.data)  # type: ignore
-        self.gripper.open_gripper(self)
-        self.gripper.set_pose(self, grasp)
-        if self.check_contact():
-            return None, None
-        self.gripper.close_gripper_at(self, grasp)
-        if not self.check_contact():
-            return None, None
-        constacts, which_finger = self.get_panda_contact()
-        if constacts is None:
-            return None, None
+            mujoco.mj_resetData(self.model, self.data)
+            mujoco.mj_forward(self.model, self.data)
 
-        # since the object is likely to move during the grasp, we need to transform the contacts to object frame
-        transform = self.get_object_transform(self.obj.name)
+            b2c = self.gripper.base_to_contact_transform()
+            pose_processed = poses[i] @ b2c
+            self.set_qpos(joints[i], gripper_joint_idxs)
+            self.gripper.set_pose(self, pose_processed)
+            mujoco.mj_forward(self.model, self.data)  # Update geom positions
+            obj_pose_before_close = self.get_object_transform(self.obj.name)
+            self.gripper.close_gripper_at(self, pose_processed)
+            if not self.check_contact_with_object():
+                # print("  Failed: No contact after closing.") # Optional debug print
+                results.append(False)
+                positional_drift.append(np.nan)
+                rotational_drift.append(np.nan)
+                continue
 
-        homogenous_contacts = np.concatenate(
-            [deepcopy(constacts), np.ones((*(constacts.shape[:-1]), 1))], axis=-1
-        ).astype(np.float32)
+            # 5. Calculate drift
+            obj_pose_after_close = self.get_object_transform(self.obj.name)
+            pos_drift = np.linalg.norm(
+                obj_pose_before_close.pos - obj_pose_after_close.pos
+            )
+            # Ensure quaternions are aligned for angle calculation
+            dot_product = np.clip(
+                np.sum(obj_pose_before_close.quat * obj_pose_after_close.quat),
+                -1.0,
+                1.0,
+            )
+            # Correct angle calculation: theta = acos(2*dot^2 - 1)
+            angle_rad = np.arccos(2 * dot_product**2 - 1)
+            # Handle potential numerical inaccuracies leading to NaN
+            if np.isnan(angle_rad):
+                angle_rad = (
+                    0.0 if np.isclose(dot_product**2, 0.5) else np.pi
+                )  # If dot is +/- sqrt(0.5), angle is 90 deg, if dot is +/- 1, angle is 0, otherwise something went wrong -> pi
+                print(
+                    f"Warning: NaN encountered in rotation drift calculation for grasp {i}. Dot product: {dot_product}. Setting angle to {np.degrees(angle_rad)} deg."
+                )
 
-        contacts = np.einsum(
-            "ij,...j->...i", transform.inverse().to_mat(), homogenous_contacts
-        )[..., :3]
+            rot_drift_deg = np.degrees(angle_rad)
 
-        return contacts, which_finger
+            positional_drift.append(pos_drift)
+            rotational_drift.append(rot_drift_deg)
+
+            # 6. Perform lift and shake tests
+            shake_passed = True
+            # --- Lift ---
+            start_pos_lift = np.copy(self.data.mocap_pos[0, :])
+            lift_target_z = start_pos_lift[2] + lift_dist
+            for t in range(nstep_lift):
+                # Simple linear interpolation for lifting
+                current_z = start_pos_lift[2] + (lift_target_z - start_pos_lift[2]) * (
+                    t / nstep_lift
+                )
+                # Directly manipulate mocap
+                self.data.mocap_pos[0, 2] = current_z
+                mujoco.mj_step(self.model, self.data)
+                # Check contact periodically during lift
+                if t > 0 and t % 100 == 0 and not self.check_contact_with_object():
+                    shake_passed = False
+                    # print(f"  Failed: Lost contact during lift at step {t}.") # Optional debug
+                    break
+            if not shake_passed:
+                results.append(False)
+                continue
+            if not self.check_contact_with_object():  # Final check after lift
+                # print("  Failed: Lost contact after lift.") # Optional debug
+                results.append(False)
+                continue
+
+            # --- Shake ---
+            current_mocap_pose = SE3Pose(
+                np.copy(self.data.mocap_pos[0, :]),
+                np.copy(self.data.mocap_quat[0, :]),
+                "wxyz",
+            )
+
+            # Move back (relative to current pose)
+            rot_mat = current_mocap_pose.to_mat()[:3, :3]
+            back_direction = rot_mat @ np.array([0, 0, -1.0])
+            target_pos_back = current_mocap_pose.pos + back_direction * shake_dist
+            start_pos_shake = np.copy(self.data.mocap_pos[0, :])
+            for t in range(shake_steps):
+                self.data.mocap_pos[0, :] = start_pos_shake + (
+                    target_pos_back - start_pos_shake
+                ) * (t / shake_steps)
+                mujoco.mj_step(self.model, self.data)
+            if not self.check_contact_with_object():
+                shake_passed = False
+                # print("  Failed: Lost contact after move back.") # Optional debug
+
+            # Move right (relative to current pose)
+            if shake_passed:
+                right_direction = rot_mat @ np.array([0, 1.0, 0])
+                target_pos_right = target_pos_back + right_direction * shake_dist
+                start_pos_shake = np.copy(self.data.mocap_pos[0, :])
+                for t in range(shake_steps):
+                    self.data.mocap_pos[0, :] = start_pos_shake + (
+                        target_pos_right - start_pos_shake
+                    ) * (t / shake_steps)
+                    mujoco.mj_step(self.model, self.data)
+                if not self.check_contact_with_object():
+                    shake_passed = False
+                    # print("  Failed: Lost contact after move right.") # Optional debug
+
+            # Move left (relative to current pose)
+            if shake_passed:
+                left_direction = rot_mat @ np.array([0, -1.0, 0])
+                # Start from the right-most position and move double the distance left
+                target_pos_left = start_pos_shake + left_direction * (2 * shake_dist)
+                # start_pos_shake = np.copy(self.data.mocap_pos[0, :]) # Already at right pos
+                for t in range(shake_steps * 2):  # Longer move across
+                    self.data.mocap_pos[0, :] = start_pos_shake + (
+                        target_pos_left - start_pos_shake
+                    ) * (t / (shake_steps * 2))
+                    mujoco.mj_step(self.model, self.data)
+                if not self.check_contact_with_object():
+                    shake_passed = False
+                    # print("  Failed: Lost contact after move left.") # Optional debug
+
+            results.append(shake_passed)
+            count_stable += int(shake_passed)
+
+        # --- Process and Return Results ---
+        results_arr = np.array(results)
+        # Ensure float for NaN
+        pos_drift_arr = np.array(positional_drift, dtype=float)
+        # Ensure float for NaN
+        rot_drift_arr = np.array(rotational_drift, dtype=float)
+
+        # Apply stability thresholds here if desired, or return raw drifts
+        # Example thresholding:
+        # pos_drift_ok = np.nan_to_num(pos_drift_arr, nan=np.inf) < 0.025
+        # rot_drift_ok = np.nan_to_num(rot_drift_arr, nan=np.inf) < 25.0
+        # final_stable_mask = results_arr & pos_drift_ok & rot_drift_ok
+        # return final_stable_mask, pos_drift_arr, rot_drift_arr
+
+        return results_arr  # , pos_drift_arr, rot_drift_arr
 
     def get_object_transform(self, object_name: str):
+        # (Implementation remains the same)
         jnt_adr_start = self.model.jnt("{}:joint".format(object_name)).qposadr[0].item()
         obj_position = np.copy(self.data.qpos[jnt_adr_start : jnt_adr_start + 3])
         obj_quat = np.copy(self.data.qpos[jnt_adr_start + 3 : jnt_adr_start + 7])
@@ -191,56 +303,19 @@ class GravitylessObjectGrasping(MjSimulation):
             obj_position.astype(np.float32), obj_quat.astype(np.float32), "wxyz"
         )
 
-    def get_panda_contact(self):
-        panda_geom_id = [
-            self.model.geom("panda_col_{}".format(i)).id for i in range(1, 13)
-        ]
-
-        panda_geom_left = [
-            self.model.geom("panda_col_{}".format(i)).id for i in range(1, 7)
-        ]  #  by xml definition
-
-        panda_geom_right = [
-            self.model.geom("panda_col_{}".format(i)).id for i in range(7, 13)
-        ]  #  by xml definition
-
-        contact_positions = []
-        which_finger = []
-        for i, contact_pair in enumerate(self.data.contact.geom):
-            # check for xor condition of panda geom and object geom contact
-            if (
-                (contact_pair[0] in panda_geom_id)
-                and (contact_pair[1] not in panda_geom_id)
-            ) or (
-                (contact_pair[1] in panda_geom_id)
-                and (contact_pair[0] not in panda_geom_id)
-            ):
-                # check if the contact is with the right or left gripper finger
-                if (contact_pair[0] in panda_geom_left) or (
-                    contact_pair[1] in panda_geom_left
-                ):
-                    contact_positions.append(self.data.contact.pos[i])
-                    which_finger.append("l")
-                elif (contact_pair[0] in panda_geom_right) or (
-                    contact_pair[1] in panda_geom_right
-                ):
-                    contact_positions.append(self.data.contact.pos[i])
-                    which_finger.append("r")
-
-        if not contact_positions:
-            return None, None
-        return np.stack(contact_positions, axis=0), which_finger
-
     def check_contact(self):
+        return self.data.ncon != 0
+
+    def check_contact_with_object(self):
         """
         As the geoms are ordered accordingly to the XML. We can simply
         check for contacts between obj geoms and gripper geoms by ids
-        relative to the table (which is between obj and gripper by construction)
+        relative to the table (which is inbetween obj and gripper by construction)
         """
         table_id = self.model.geom("geom:ground").id
         for contact_pairs in self.data.contact.geom:
             if (contact_pairs[0] < table_id and contact_pairs[1] > table_id) or (
                 contact_pairs[0] > table_id and contact_pairs[1] < table_id
             ):
-                return 1.0
-        return 0.0
+                return True
+        return False

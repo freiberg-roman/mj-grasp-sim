@@ -6,6 +6,12 @@
         "dockerfile": "../Dockerfile.dev",
         "context": ".."
     },
+    "features": {
+        "ghcr.io/devcontainers/features/nix:1": {
+            "useAttributePath": true,
+            "packages": "nixpkgs.neovim, nixpkgs.zoxide, nixpkgs.nushell, nixpkgs.nodejs_23, nixpkgs.lazygit, nixpkgs.fzf, nixpkgs.ripgrep, nixpkgs.gh, nixpkgs.stow"
+        }
+    },
 	"customizations": {
 		"vscode": {
 			"settings": {
@@ -21,11 +27,11 @@
         "--network=host"
     ],
 	"forwardPorts": [],
+    "workspaceMount": "source=${localWorkspaceFolder},target=/app,type=bind",
     "workspaceFolder": "/app",
     "remoteUser": "mgs",
     "postCreateCommand": "pip install --upgrade pip && pip install -e .",
     "mounts": [
-        "source=${localWorkspaceFolder},target=/app,type=bind,consistency=cached",
         "source=${localWorkspaceFolder},target=/out,type=bind,consistency=cached"
     ]
 }

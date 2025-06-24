@@ -37,7 +37,9 @@ class MjScanEnv(MjSimulation):
         self.width = image_width
         self.height = image_height
         cam_id = mujoco.mj_name2id(  # type: ignore
-            m=self.model, name=camera_name, type=mujoco.mjtObj.mjOBJ_CAMERA  # type: ignore
+            m=self.model,
+            name=camera_name,
+            type=mujoco.mjtObj.mjOBJ_CAMERA,  # type: ignore
         )
         self.fovy = self.model.cam_fovy[cam_id]
         self.fovx = (
@@ -57,7 +59,7 @@ class MjScanEnv(MjSimulation):
         self.cy = self.height / 2
 
     @abstractmethod
-    def update_camera_settings(self):
+    def update_camera_settings(self, num_images, i):
         pass
 
     def get_camera_intrinsics(self):
@@ -77,8 +79,8 @@ class MjScanEnv(MjSimulation):
         depths = []
         segmentations = []
         extrinsics = []
-        for _ in range(num_images):
-            self.update_camera_settings()
+        for i in range(num_images):
+            self.update_camera_settings(num_images, i)
             extrinsics.append(self.get_camera_extrinsics())
 
             img = self.renderer.render()
@@ -97,8 +99,8 @@ class MjScanEnv(MjSimulation):
             # segmentation
             self.renderer.enable_segmentation_rendering()
             segmentation = self.renderer.render()
-
             self.renderer.disable_segmentation_rendering()
+
             segmentation = np.copy(segmentation[..., 0])
             segmentation = np.expand_dims(segmentation, axis=0)
             segmentations.append(segmentation)
@@ -116,7 +118,7 @@ class MjScanEnv(MjSimulation):
         # masks
         zero_one_img = (~(segmentation == -1)).astype(np.uint8)
         kernel = np.ones((3, 3), np.uint8)
-        erode_selection = cv2.erode(zero_one_img, kernel, iterations=1)
+        erode_selection = cv2.erode(zero_one_img, kernel, iterations=5)
         image_masks = erode_selection.astype(bool)
 
         rgbd[..., :-1] = rgbd[..., :-1] / 255.0

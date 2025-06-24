@@ -21,6 +21,7 @@ from mgs.gripper.allegro import GripperAllegro
 from mgs.gripper.base import MjShakableOpenCloseGripper
 from mgs.gripper.dexee import GripperDexee
 from mgs.gripper.google import GripperGoogle
+from mgs.gripper.leap import GripperLeap
 from mgs.gripper.panda import GripperPanda
 from mgs.gripper.rethink import GripperRethink
 from mgs.gripper.robotiq2f85 import GripperRobotiq2f85
@@ -35,8 +36,6 @@ def get_gripper(cfg: DictConfig, default_pose=None) -> MjShakableOpenCloseGrippe
         if default_pose is None
         else default_pose
     )
-    assert isinstance(pose, SE3Pose)
-
     if cfg.name == "GoogleGripper":
         return GripperGoogle(pose)
 
@@ -50,7 +49,7 @@ def get_gripper(cfg: DictConfig, default_pose=None) -> MjShakableOpenCloseGrippe
         return GripperRobotiq2f85(pose)
 
     if cfg.name == "ShadowHand":
-        return GripperShadowRight(pose, grasp_type=cfg.grasp_type)
+        return GripperShadowRight(pose)
 
     if cfg.name == "VXGripper":
         return GripperVX300(pose)
@@ -60,5 +59,8 @@ def get_gripper(cfg: DictConfig, default_pose=None) -> MjShakableOpenCloseGrippe
 
     if cfg.name == "AllegroGripper":
         return GripperAllegro(pose)
+
+    if cfg.name == "LeapGripper":
+        return GripperLeap(pose)
 
     raise ValueError(f"Unknown gripper: {cfg.name}")

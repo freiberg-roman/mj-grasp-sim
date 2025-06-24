@@ -48,6 +48,7 @@ def scan(cfg: DictConfig):
 def main(cfg: DictConfig):
     output_dir = os.getenv("MGS_OUTPUT_DIR")
     output_dir if output_dir is not None else "."
+    output_dir = "."
 
     images, extrinsics, intrinsics, image_masks, segmentation = scan(cfg)
 
@@ -55,6 +56,7 @@ def main(cfg: DictConfig):
     segmentation_dict = OmegaConf.to_container(
         DictConfig.get(cfg, "gripper.segmentation", OmegaConf.create({}))
     )
+    segmentation_dict = OmegaConf.to_container(cfg.gripper.segmentation)
     segments = {}
     for key in segmentation_dict.keys():
         mask_values = segmentation_dict[key]

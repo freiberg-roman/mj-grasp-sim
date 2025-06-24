@@ -8,8 +8,14 @@ __pycache__/
 *$py.class
 contact_grasp_scenes/*
 
+asset/mj-objects
+
 # C extensions
 *.so
+LeapGripper/
+ShadowHand/
+PandaGripper/
+VXGripper/
 
 # Distribution / packaging
 top_grasp_scenes/*

@@ -81,7 +81,9 @@ def quaternion_apply(
 #   (https://github.com/tomato1mule/diffusion_edf/tree/d1ae47fa4bf6e0133c5c373b20939c603d327fc0)
 # Copyright (c) Hyunwoo Ryu 2023 licensed under the MIT license,
 # cf. 3rd-party-licenses.txt file in the root directory of this source tree.
-def quaternion_raw_multiply(a: np.ndarray, b: np.ndarray, type: str = "wxyz") -> np.ndarray:
+def quaternion_raw_multiply(
+    a: np.ndarray, b: np.ndarray, type: str = "wxyz"
+) -> np.ndarray:
     """
     Multiply two quaternions.
     Usual torch rules for broadcasting apply.

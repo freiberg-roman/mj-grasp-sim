@@ -189,4 +189,58 @@ def get_objects(cfg: DictConfig) -> List[CollisionMeshObject]:
                 size=0.02,
             )
         )
+    elif cfg.name == "Fast_Data_Subset":
+        import random
+
+        num_objects = cfg.num_objects
+        fast_object_file = os.path.join(
+            GIT_PATH, "asset", "mj-objects", "fast_eta_objects.txt"
+        )
+        with open(fast_object_file, "r") as file:
+            fast_objects = file.read().splitlines()
+
+        # choose num_objects (with repetition) from the list of all object ids
+        ycb_obj_ids = [
+            ("ycb", i) for i in ObjectYCB.all_object_ids() if i in fast_objects
+        ]
+        gso_obj_ids = [
+            ("gso", i) for i in ObjectGSO.all_object_ids() if i in fast_objects
+        ]
+        obj_ids = ycb_obj_ids + gso_obj_ids
+        chosen_obj_ids = random.choices(obj_ids, k=num_objects)
+
+        x, y = -8.5, -8
+        for i, tagged_obj in enumerate(chosen_obj_ids):
+            tag, obj = tagged_obj
+            hash_name = generate_unique_hash()
+
+            if i % 10 == 0:
+                x += 0.5
+                y = -8
+            else:
+                y += 0.5
+            if tag == "ycb":
+                object_list.append(
+                    ObjectYCB(
+                        SE3Pose(
+                            np.array([float(x), float(y), 0]),
+                            np.array([1, 0, 0, 0]),
+                            type="wxyz",
+                        ),
+                        object_id=obj,
+                        name=hash_name,
+                    )
+                )
+            elif tag == "gso":
+                object_list.append(
+                    ObjectGSO(
+                        SE3Pose(
+                            np.array([float(x), float(y), 0]),
+                            np.array([1, 0, 0, 0]),
+                            type="wxyz",
+                        ),
+                        object_id=obj,
+                        name=hash_name,
+                    )
+                )
     return object_list
