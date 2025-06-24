@@ -91,36 +91,49 @@ def filter_grasps(cfg: DictConfig, scene_def):
     all_joints = np.concatenate(all_joints, axis=0)
     obj_indices = np.concatenate(obj_indices, axis=0)
 
-    shuffle_indices = np.random.permutation(len(all_poses))
-    all_poses = all_poses[shuffle_indices]
-    all_joints = all_joints[shuffle_indices]
-    obj_indices = obj_indices[shuffle_indices]
-
     collision_free_mask = env.grasp_collision_mask(
         SE3Pose.from_mat(deepcopy(all_poses), type="wxyz"),
         deepcopy(all_joints),
     )
+    enough_collision_free = 128
+    if sum(collision_free_mask) < enough_collision_free:
+        raise ValueError("Not enough collision free grasps!")
     collision_free_poses = all_poses[collision_free_mask]
     collision_free_joints = all_joints[collision_free_mask]
     collision_free_obj_indices = obj_indices[collision_free_mask]
 
-    enough_stable = min(128, cfg.num_objects * 32)
-    stable_grasp_mask = env.grasp_stable_mask(
-        SE3Pose.from_mat(deepcopy(collision_free_poses), type="wxyz"),
-        deepcopy(collision_free_joints),
-        deepcopy(scene_def["env_state"]["state"]),
-        enough_stable=enough_stable,
-    )
-    if sum(stable_grasp_mask) < enough_stable:
-        raise ValueError("Not enough stable grasps!")
+    collision_poses = all_poses[~collision_free_mask]
+    collision_joints = all_joints[~collision_free_mask]
+    collision_obj_indices = obj_indices[~collision_free_mask]
 
-    stable_poses = collision_free_poses[stable_grasp_mask]
-    stable_joints = collision_free_joints[stable_grasp_mask]
-    stable_obj_indices = collision_free_obj_indices[stable_grasp_mask]
+    if not cfg.only_collision_free:
+        shuffle_indices = np.random.permutation(len(collision_free_poses))
+        collision_free_poses = collision_free_poses[shuffle_indices]
+        collision_free_joints = collision_free_joints[shuffle_indices]
+        collision_free_obj_indices == collision_free_obj_indices[shuffle_indices]
+
+        enough_stable = min(128, cfg.num_objects * 32)
+        stable_grasp_mask = env.grasp_stable_mask(
+            SE3Pose.from_mat(deepcopy(collision_free_poses), type="wxyz"),
+            deepcopy(collision_free_joints),
+            deepcopy(scene_def["env_state"]["state"]),
+            enough_stable=enough_stable,
+        )
+        if sum(stable_grasp_mask) < enough_stable:
+            raise ValueError("Not enough stable grasps!")
+
+        result_poses = collision_free_poses[stable_grasp_mask]
+        result_joints = collision_free_joints[stable_grasp_mask]
+        result_obj_indices = collision_free_obj_indices[stable_grasp_mask]
+    else:
+        result_poses = collision_free_poses
+        result_joints = collision_free_joints
+        result_obj_indices = collision_free_obj_indices
 
     result = []
-    for obj_idx in np.unique(stable_obj_indices):
-        mask = stable_obj_indices == obj_idx
+    neg_result = []
+    for obj_idx in np.unique(result_obj_indices):
+        mask = result_obj_indices == obj_idx
         if sum(mask) == 0:
             continue
         obj_name, obj_id = obj_map[obj_idx]
@@ -128,11 +141,22 @@ def filter_grasps(cfg: DictConfig, scene_def):
             {
                 "object_id": obj_id,
                 "object_name": obj_name,
-                "pose": stable_poses[mask],
-                "joints": stable_joints[mask],
+                "pose": result_poses[mask],
+                "joints": result_joints[mask],
             }
         )
-    return result
+        if cfg.save_collision_grasps:
+            collision_mask = collision_obj_indices == obj_idx
+            if sum(collision_mask) > 0:
+                neg_result.append(
+                    {
+                        "object_id": obj_id,
+                        "object_name": obj_name,
+                        "pose": collision_poses[collision_mask],
+                        "joints": collision_joints[collision_mask],
+                    }
+                )
+    return result, neg_result
 
 
 @hydra.main(config_path="config", config_name="gen_scene")
@@ -150,7 +174,7 @@ def main(cfg: DictConfig):
 
     try:
         scene_dict = gen_stable_scene(cfg)
-        valid_grasps = filter_grasps(cfg, scene_dict)
+        valid_grasps, invalid_grasps = filter_grasps(cfg, scene_dict)
         scene_path = os.path.join(output_dir, "scene")
         os.makedirs(output_dir, exist_ok=True)
         np.savez(
@@ -162,6 +186,16 @@ def main(cfg: DictConfig):
         for grasps in valid_grasps:
             obj_id, obj_name = grasps["object_id"], grasps["object_name"]
             object_path = os.path.join(output_dir, obj_id + "_" + obj_name)
+            np.savez(
+                object_path,
+                **{
+                    "pose": grasps["pose"],
+                    "joints": grasps["joints"],
+                },
+            )
+        for grasps in invalid_grasps:
+            obj_id, obj_name = grasps["object_id"], grasps["object_name"]
+            object_path = os.path.join(output_dir, obj_id + "_" + obj_name + "_" + "collision")
             np.savez(
                 object_path,
                 **{
