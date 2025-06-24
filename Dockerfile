@@ -41,10 +41,10 @@ FROM base-app AS gripper-scan
 ENTRYPOINT ["python", "-m", "mgs.cli.scan_gripper"]
 
 FROM base-app AS clutter-gen
-ENTRYPOINT ["python", "-m", "mgs.cli.gen_clutter_scene"]
+ENTRYPOINT ["python", "-m", "mgs.cli.gen_scene"]
 
 FROM base-app AS scene-render
-ENTRYPOINT ["python", "-m", "mgs.cli.render_scene"]
+ENTRYPOINT ["python", "-m", "mgs.cli.render_scene_processed"]
 
 FROM base-app AS grasp-filter
 ENTRYPOINT ["python", "-m", "mgs.cli.filter_to_stable"]
