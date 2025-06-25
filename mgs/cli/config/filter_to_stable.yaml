@@ -1,5 +1,9 @@
 defaults:
   - _self_
-  - gripper: leap
+  - gripper: allegro
 
-id: 0
+id: 5
+
+hydra:
+  job:
+    chdir: False

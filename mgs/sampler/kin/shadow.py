@@ -260,7 +260,7 @@ except Exception as e:
     print(f"Warning: Path detection failed {e}. Using default DATA_PATH: {DATA_PATH}")
 
 
-SHADOW_NPZ_FILE = "gripper_shadow.npz"
+SHADOW_NPZ_FILE = "./mgs/sampler/kin/gripper_shadow.npz"
 NUM_POINTS_VIS = 2000
 NORMAL_VIS_LENGTH = 0.02
 
@@ -328,10 +328,41 @@ def visualize_shadow_initial_contacts_normals():
     # These imports need to be resolvable
     kin_model = ShadowKinematicsModel()
     # --- Ensure using JAX array for theta ---
-    initial_pose_jax = jnp.array(
-        kin_model.init_pregrasp_joint.value
-    )  # Get initial pose
-    print("  Using initial pre-grasp joint configuration.")
+    # TODO: Select different joint values and visualize them
+    # Use the GUI to compare some initial joint values
+    another_theta = jnp.array(
+        [
+            0.059,
+            -0.437,
+            -0.041,
+            -0.0036,
+            -0.067,
+            -0.0186,
+            0.0147,
+            0.0152,
+            -0.0958,
+            0.0145,
+            1.15,
+            0.9,
+            0.01,
+            0.01,
+            0.81,
+            0.91,
+            0.939,
+            0.025,
+            -0.0175,
+            -0.16,
+            0.321,
+            -0.01,
+        ]
+    )
+    # initial_pose_jax = jnp.array(
+    #     kin_model.init_pregrasp_joint.value
+    # )  # Get initial pose
+    # print("  Using initial pre-grasp joint configuration.")
+
+    initial_pose_jax = another_theta  # Use the new theta
+    print("  Using another theta configuration.")
 
     # Convert inputs to JAX arrays
     points_vis_jax = jnp.array(points_vis_np)
@@ -343,6 +374,8 @@ def visualize_shadow_initial_contacts_normals():
     )
     # Ensure kin_model is passed correctly (might need graph/state if using nnx.split elsewhere)
     # Assuming kinematic_pcd_transform can take the model instance directly
+
+    #TODO: understand kinematic_pcd_transform doing
     points_vis_transformed_jax = kinematic_pcd_transform(
         points_vis_jax, initial_pose_jax, segmentations_jax, kin_model
     )
@@ -351,9 +384,7 @@ def visualize_shadow_initial_contacts_normals():
 
     # 4. Transform Contact Points and Calculate Normals using YOUR FK function
     print("Transforming contact points and calculating normals using YOUR FK...")
-    local_contacts = kin_model.local_fingertip_contact_positions.value.squeeze(
-        1
-    )  # (5, 3)
+    local_contacts = kin_model.local_fingertip_contact_positions.value[:, 0, :]   # (5, 3)
     # (5, 3)
     local_normals = kin_model.fingertip_normals.value
     # Local origin for normal calculation
@@ -372,6 +403,8 @@ def visualize_shadow_initial_contacts_normals():
             forward_kinematic_point_transform, in_axes=(None, 0, None, None)
         )(theta, local_pts, joint_idx, model)
 
+
+    #TODO : visual finger tip points and their normals
     for i in range(len(fingertip_joint_indices)):
         joint_idx = fingertip_joint_indices[i]
         local_point_contact = local_contacts[i]

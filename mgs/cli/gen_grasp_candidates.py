@@ -30,15 +30,17 @@ def main(cfg: DictConfig):
     object_id = all_object_ids[int(cfg.id)]
     obj = get_object(object_id)
     sampler = None
-    if cfg.gripper.name in ["ShadowHand", "LeapGripper"]:
+    if cfg.gripper.name in ["ShadowHand", "LeapGripper", "AllegroGripper"]:
         from mgs.sampler.contact import ContactBasedDiff
         from mgs.sampler.kin.shadow import ShadowKinematicsModel
         from mgs.sampler.kin.leap import LeapHandKinematicsModel
+        from mgs.sampler.kin.allegro import AllegroKinematicsModel
         sampler = ContactBasedDiff(obj)
         all_kins = {
             "ShadowHand": ShadowKinematicsModel(),
             "LeapGripper": LeapHandKinematicsModel(),
             "PandaGripper": None,
+            "AllegroGripper": AllegroKinematicsModel(),
             "VXGripper": None,
         }
         kin_model = all_kins[cfg.gripper.name]

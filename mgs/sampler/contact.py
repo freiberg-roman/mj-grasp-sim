@@ -19,6 +19,7 @@ from mgs.sampler.kin.jax_util import (
 )
 from mgs.sampler.kin.base import KinematicsModel, forward_kinematic_point_transform
 import jax.numpy as jnp
+from mgs.util.geo.transforms import SE3Pose
 
 NUM_SURFACE_SAMPLES = 30000
 LOCAL_REGION_RADIUS = 0.10  # 10 cm
@@ -105,6 +106,7 @@ def update(
     forward_kin = jnp.stack(
         [gripper_contact_positions, joint_origin, contact_neg_normal], axis=0
     )
+
 
     def loss_fn(to_opt, i):
         transformed_values = nnx.vmap(
@@ -217,7 +219,7 @@ class ContactBasedDiff(GraspGenerator):
         y_axis = jnp.cross(z_axis, x_axis)
 
         (align_rot, align_pos) = gripper.align_to_approach.value
-        initial_rotations = jnp.stack([x_axis, y_axis, z_axis], axis=-1)
+        initial_rotations = jnp.stack([x_axis, y_axis, z_axis], axis=-1) 
         align_pos = jnp.einsum("...ij,j->...i", initial_rotations, align_pos)
         initial_rotations = jnp.einsum(
             "...ij,jk->...ik", initial_rotations, align_rot)
@@ -271,8 +273,8 @@ class ContactBasedDiff(GraspGenerator):
             transformed_points,
             contact_points_for_seeds_offset,
             permutation_idx,
-        )
-
+        )        
+          
         for i in range(150):
             trainer.train_step(
                 gripper.local_fingertip_contact_positions[
@@ -281,7 +283,7 @@ class ContactBasedDiff(GraspGenerator):
                 (target_points, contact_points_normals),
             )
 
-        _, _, opt_state = nnx.merge(trainer.train_graph, trainer.train_state)
+        _, _ , opt_state = nnx.merge(trainer.train_graph, trainer.train_state)                
 
         rot = rotation_6d_to_matrix(opt_state.rot.value)
         trans = opt_state.pos.value
@@ -295,3 +297,5 @@ class ContactBasedDiff(GraspGenerator):
         Hs = jnp.concatenate([Hs_3x4, last_row], axis=1)
         aux_info = {"joints": joints}
         return Hs, aux_info
+
+
