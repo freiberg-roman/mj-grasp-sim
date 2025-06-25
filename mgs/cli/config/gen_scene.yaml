@@ -7,7 +7,9 @@ defaults:
   - object: subset_from_fast
   - env: clutter_table
 
-num_objects: 1
+num_objects: 5
+only_collision_free: False
+save_collision_grasps: False
 
 hydra:
   job:
