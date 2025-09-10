@@ -28,30 +28,8 @@ ENV MUJOCO_GL=egl
 ENV MGS_OUTPUT_DIR=/out
 ENV MGS_INPUT_DIR=/in
 
-COPY ./requirements.txt .
-RUN pip install --upgrade pip && pip install -r requirements.txt
-
 # Copies the current directory contents into the container at /app
 COPY . .
-
-# install package 
 RUN pip install --upgrade pip && pip install -e .
-
-FROM base-app AS gripper-scan
-ENTRYPOINT ["python", "-m", "mgs.cli.scan_gripper"]
-
-FROM base-app AS clutter-gen
-ENTRYPOINT ["python", "-m", "mgs.cli.gen_scene"]
-
-FROM base-app AS scene-render
-ENTRYPOINT ["python", "-m", "mgs.cli.render_scene_processed"]
-
-FROM base-app AS grasp-filter
-ENTRYPOINT ["python", "-m", "mgs.cli.filter_to_stable"]
-
-FROM base-app AS grasp-gen
-ENTRYPOINT ["python", "-m", "mgs.cli.gen_grasp_candidates"]
-
-FROM base-app AS grasp-eval
-ENTRYPOINT ["python", "-m", "mgs.cli.eval_grasps"]
-
+# type in mgs.cli.<script to execute>
+ENTRYPOINT ["python", "-m", " "]

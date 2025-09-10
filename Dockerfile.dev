@@ -36,9 +36,8 @@ ENV MGS_OUTPUT_DIR=/out
 ENV MGS_INPUT_DIR=/in
 
 # Copy and install Python dependencies
-COPY ./requirements.txt .
-RUN pip install --upgrade pip && pip install -r requirements.txt
-RUN pip install --upgrade pip && pip install matplotlib pillow
+COPY . .
+RUN pip install --upgrade pip && pip install -e '.[dev]'
 
 # Create a non-root user and switch to it
 RUN useradd -ms /bin/bash mgs
