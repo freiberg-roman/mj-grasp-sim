@@ -1,33 +1,10 @@
-# Copyright (c) 2025 Robert Bosch GmbH
-# Author: Roman Freiberg
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published
-# by the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from copy import deepcopy
-from typing import List, Dict, Any, Tuple, Union  # Added Dict, Any, Tuple, Union
+from typing import List, Tuple
 
 import mujoco
-import mujoco.viewer
 import numpy as np
 
 from mgs.core.simualtion import MjSimulation
-
-# Make sure the gripper has the set_gripper_width method
 from mgs.gripper.base import MjShakableOpenCloseGripper
-
-# Import specific grippers ONLY if type checking requires it after set_gripper_width add
-# from mgs.gripper.panda import GripperPanda
-# from mgs.gripper.vx300 import GripperVX300
 from mgs.obj.base import CollisionMeshObject
 from mgs.util.geo.transforms import SE3Pose
 
@@ -71,6 +48,8 @@ class GravitylessObjectGrasping(MjSimulation):
         mujoco.mj_forward(self.model, self.data)  # type: ignore
 
     def idle_grasp(self, pose: SE3Pose, joints: np.ndarray):
+        import mujoco.viewer
+
         # (Implementation remains the same)
         mujoco.mj_resetData(self.model, self.data)
         b2c = self.gripper.base_to_contact_transform()
@@ -91,6 +70,7 @@ class GravitylessObjectGrasping(MjSimulation):
         self,
         poses: SE3Pose,
         joints: np.ndarray,
+        with_padding: float | None = None,
     ) -> np.ndarray:
         if len(poses) != len(joints):
             raise ValueError(
@@ -105,23 +85,56 @@ class GravitylessObjectGrasping(MjSimulation):
         num_grasps = len(poses)
         gripper_joint_idxs = self.get_joint_idxs(
             self.gripper.get_actuator_joint_names()
-        )  # Cache indices
+        )
+
+        # prebuild the 7 local offsets we will apply BEFORE base-to-contact:
+        # identity, and translations by ±padding along local x, y, z (no rotation)
+        if with_padding is not None and with_padding > 0:
+            zero = np.zeros(3, dtype=np.float32)
+            qwxyz = np.array(
+                [1.0, 0.0, 0.0, 0.0], dtype=np.float32
+            )  # identity quat (wxyz)
+            p = float(with_padding)
+            deltas = [
+                SE3Pose(zero, qwxyz, "wxyz"),  # original (no shift)
+                SE3Pose(np.array([+p, 0.0, 0.0], np.float32), qwxyz, "wxyz"),
+                SE3Pose(np.array([-p, 0.0, 0.0], np.float32), qwxyz, "wxyz"),
+                SE3Pose(np.array([0.0, +p, 0.0], np.float32), qwxyz, "wxyz"),
+                SE3Pose(np.array([0.0, -p, 0.0], np.float32), qwxyz, "wxyz"),
+                SE3Pose(np.array([0.0, 0.0, +p], np.float32), qwxyz, "wxyz"),
+                SE3Pose(np.array([0.0, 0.0, -p], np.float32), qwxyz, "wxyz"),
+            ]
+        else:
+            deltas = [None]  # sentinel meaning "no perturbation"
 
         initial_state = self.get_state()
 
         for i in range(num_grasps):
-            mujoco.mj_resetData(self.model, self.data)
-            mujoco.mj_forward(self.model, self.data)
+            all_clear = True
 
-            b2c = self.gripper.base_to_contact_transform()
-            pose_processed = poses[i] @ b2c  # Apply base-to-contact transform
-            self.set_qpos(joints[i], gripper_joint_idxs)
-            self.gripper.set_pose(self, pose_processed)
-            mujoco.mj_forward(self.model, self.data)
-            has_contact = self.check_contact()
-            collision_free_mask.append(not has_contact)
+            for delta in deltas:
+                # reset to a clean state before each check
+                mujoco.mj_resetData(self.model, self.data)
+                mujoco.mj_forward(self.model, self.data)
 
-        self.set_state(initial_state)
+                # compose: apply optional local translation BEFORE base-to-contact transform
+                # world_T_grasp_perturbed = world_T_grasp @ T_local(delta)
+                grasp_pose = poses[i] if delta is None else (poses[i] @ delta)
+
+                # then move from gripper base to its contact frame
+                pose_processed = grasp_pose @ self.gripper.base_to_contact_transform()
+
+                # set joints and pose, then evaluate contacts
+                self.set_qpos(joints[i], gripper_joint_idxs)
+                self.gripper.set_pose(self, pose_processed)
+                mujoco.mj_forward(self.model, self.data)
+
+                if self.check_contact():
+                    all_clear = False
+                    break  # no need to test the remaining perturbations
+
+            collision_free_mask.append(all_clear)
+            self.set_state(initial_state)
         return np.array(collision_free_mask)
 
     def grasp_stability_evaluation_from_joints(

@@ -7,8 +7,8 @@ from omegaconf import DictConfig
 from mgs.env.gravityless_object_grasping import GravitylessObjectGrasping
 from mgs.gripper.selector import get_gripper
 from mgs.obj.selector import get_object
-from mgs.util.geo.transforms import SE3Pose  # Needed for SE3Pose operations
 from mgs.util.const import ASSET_PATH
+from mgs.util.geo.transforms import SE3Pose  # Needed for SE3Pose operations
 
 
 @hydra.main(config_path="config", config_name="filter_stable_grasps")
@@ -38,7 +38,6 @@ def main(cfg: DictConfig):
 
     poses_stable = poses[mask].to_mat()
     joints_stable = joints[mask]
-
 
     file_ouput_path = os.path.join(file_dir, "stable_grasps.npz")
     np.savez(

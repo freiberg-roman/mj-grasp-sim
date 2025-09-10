@@ -220,7 +220,7 @@ class GripperPanda(MjShakableOpenCloseGripper, MjScannable):
         target_q2 = -0.04 + (clamped_width / 2.0)
         target_q1 = np.clip(target_q1, self.Q1_RANGE[0], self.Q1_RANGE[1])
         target_q2 = np.clip(target_q2, self.Q2_RANGE[0], self.Q2_RANGE[1])
-        return target_q1, target_q2
+        return np.stack([target_q1, target_q2], axis=-1)
 
     def close_gripper_at(self, sim: MjSimulation, pose: SE3Pose):
         """
@@ -263,4 +263,4 @@ class GripperPanda(MjShakableOpenCloseGripper, MjScannable):
 
     def _clamp_width(self, width: np.array) -> float:
         """Clamps the desired width to the gripper's operational range."""
-        return np.clip(width + 0.025, self.MIN_WIDTH_CLAMP, self.MAX_WIDTH)
+        return np.clip(width + 0.008, self.MIN_WIDTH_CLAMP, self.MAX_WIDTH)

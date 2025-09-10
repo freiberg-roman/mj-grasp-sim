@@ -29,7 +29,8 @@ dependencies = [
   "pandas==2.3.2",
   "opencv-python==4.12.0.88",
   "jax[cuda]==0.7.1",
-  "flax==0.11.2"
+  "flax==0.11.2",
+  "pyglet==1.5.31"
 ]
 
 [project.optional-dependencies]

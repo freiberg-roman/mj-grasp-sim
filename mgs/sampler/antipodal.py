@@ -13,286 +13,257 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-from typing import Tuple, Dict, Any
+from typing import Any, Dict, Tuple
 
 import numpy as np
 import trimesh
-from scipy.stats import vonmises_fisher
 
 from mgs.obj.base import CollisionMeshObject
 from mgs.sampler.base import GraspGenerator
-from mgs.util.geo.transforms import SE3Pose
+from mgs.util.geo.transforms import SE3Pose  # type hint only
 
 
 class AntipodalGraspGenerator(GraspGenerator):
     """
-    Generates antipodal grasps by sampling points on the object surface,
-    finding opposing points via ray casting, and calculating the required
-    gripper width and pose.
+    Single-pass antipodal grasp generator.
+
+    One sweep:
+      1) Sample surface points.
+      2) For each point, cast a ray along the inward normal and collect all hits.
+      3) For each (start, hit) pair, set x = antipodal axis (deterministic),
+         sample 10 approach directions uniformly on the circle orthogonal to x,
+         set y = z × x, pose at the pair midpoint, width = ||hit - start||.
+      4) Stop as soon as >= num grasps are produced. No refill loops.
     """
 
-    def __init__(self, object: CollisionMeshObject):
-        super().__init__(object)
-        self.mesh: trimesh.Trimesh = None
-        self.scale: float = 1.0
-        self.offset: np.ndarray = np.array([0.0, 0.0, 0.0])
+    def __init__(self, obj: CollisionMeshObject):
+        super().__init__(obj)
+        self._obj = obj
+        self._mesh_orig: trimesh.Trimesh | None = None
+        self._mesh_norm: trimesh.Trimesh | None = None
+        self._centroid: np.ndarray | None = None
+        self._scale_diag: float | None = None
+        self._ray_eps: float = 1e-6
 
-    def denormalize_points(self, points: np.ndarray) -> np.ndarray:
-        """Denormalizes points from the mesh's local frame to the original frame."""
-        if points.ndim == 1:
-            return (points - self.offset) * self.scale
-        return (points - self.offset[np.newaxis, :]) * self.scale
+    # --- normalization helpers ---
 
-    def denorm_grasp_pose(self, Hs: np.ndarray) -> np.ndarray:
-        """Denormalizes the grasp pose transformation matrix."""
-        # Denormalize the translation (center point)
-        position = Hs[..., :3, 3]
-        position = self.denormalize_points(position)
-        Hs[..., :3, 3] = position
-        # Rotation is not affected by uniform scale or translation offset
+    def _load_mesh(self) -> trimesh.Trimesh:
+        mesh = trimesh.load_mesh(self._obj.obj_file_path)
+        if isinstance(mesh, trimesh.Scene):
+            geoms = [
+                g for g in mesh.geometry.values() if isinstance(g, trimesh.Trimesh)
+            ]
+            if not geoms:
+                raise TypeError(
+                    f"No Trimesh geometry found in scene: {self._obj.obj_file_path}"
+                )
+            mesh = geoms[0]
+        if not isinstance(mesh, trimesh.Trimesh):
+            raise TypeError(f"Unsupported mesh type: {type(mesh)}")
+        return mesh
+
+    def _ensure_normalized(self):
+        if self._mesh_norm is not None:
+            return
+        mesh = self._load_mesh()
+        centroid = mesh.centroid
+        scale_diag = (
+            float(mesh.scale)
+            if hasattr(mesh, "scale")
+            else float(np.linalg.norm(mesh.extents))
+        )
+        if scale_diag == 0.0:
+            raise ValueError("Degenerate mesh: zero extent")
+
+        T = np.eye(4)
+        T[:3, 3] = -centroid
+        S = np.diag([1.0 / scale_diag, 1.0 / scale_diag, 1.0 / scale_diag, 1.0])
+        N = S @ T
+
+        mesh_norm = mesh.copy()
+        mesh_norm.apply_transform(N)
+
+        self._mesh_orig = mesh
+        self._mesh_norm = mesh_norm
+        self._centroid = centroid
+        self._scale_diag = scale_diag
+
+    def _denorm_points(self, pts_norm: np.ndarray) -> np.ndarray:
+        return pts_norm * self._scale_diag + self._centroid
+
+    def _denorm_poses(self, Hs_norm: np.ndarray) -> np.ndarray:
+        Hs = Hs_norm.copy()
+        Hs[..., :3, 3] = self._denorm_points(Hs[..., :3, 3])
         return Hs
 
-    def normalize_load(self):
-        """Loads and normalizes the mesh (unit scale, centered at origin)."""
-        mesh = trimesh.load_mesh(self.mesh_file_path)
-        if not isinstance(mesh, trimesh.Trimesh):
-            # If load_mesh returns a Scene, try to extract the first Trimesh geometry
-            if isinstance(mesh, trimesh.Scene):
-                geometries = list(mesh.geometry.values())
-                trimesh_geoms = [
-                    g for g in geometries if isinstance(g, trimesh.Trimesh)
-                ]
-                if not trimesh_geoms:
-                    raise TypeError(
-                        f"Loaded mesh scene from {self.mesh_file_path} contains no trimesh.Trimesh objects"
-                    )
-                mesh = trimesh_geoms[0]  # Use the first mesh found
-                print(
-                    f"Warning: Loaded a scene, using the first Trimesh geometry found: {list(mesh.geometry.keys())[0]}"
-                )
-            else:
-                raise TypeError(
-                    f"Loaded mesh from {self.mesh_file_path} is not a trimesh.Trimesh or Scene object, but {type(mesh)}"
-                )
-
-        # Store original scale and centroid-offset for denormalization
-        self.scale = float(mesh.scale)
-        self.offset = (
-            -mesh.centroid
-        )  # Note: offset is defined as the vector TO ADD to normalized coords
-
-        # Apply normalization
-        mesh.apply_scale(1.0 / self.scale)
-        transform_matrix = np.eye(4)
-        transform_matrix[
-            :3, 3
-        ] = -mesh.centroid  # Translate mesh so its centroid is at origin
-        mesh.apply_transform(transform_matrix)
-
-        self.mesh = mesh
-
+    # --- core sampler ---
 
     def generate_grasps(
-        self, num: int, kappa: float = 10.0, eps: float = 1e-5
+        self, num: int, eps: float = 1e-5
     ) -> Tuple[SE3Pose, Dict[str, Any]]:
-        self.normalize_load()
-        surface_points, face_idx = trimesh.sample.sample_surface(
-            self.mesh, 5 * num)
-        normals = self.mesh.face_normals[face_idx]
-        normals = normals / np.linalg.norm(normals, axis=1, keepdims=True)
-        random_dirs = np.empty_like(surface_points)
-
-        for i in range(len(surface_points)):
-            sample_dir = vonmises_fisher.rvs(
-                mu=-normals[i], kappa=kappa, size=1)[0]
-            random_dirs[i] = sample_dir / np.linalg.norm(sample_dir)
-
-        contact_pairs_one = []
-        contact_pairs_two = []
-        num_points = len(surface_points)
-
-        for i in range(num_points):
-            if len(contact_pairs_one) >= num:
-                break
-
-            origin = surface_points[i]  # First contact point
-
-            # Create two ray directions: one as the sampled direction, one as its negative.
-            directions = [random_dirs[i], -random_dirs[i]]
-            origins_for_rays = [origin, origin]
-            # Compute intersections (for both rays) without wrapping in any try/except block
-            locations, index_ray, _ = self.mesh.ray.intersects_location(
-                ray_origins=origins_for_rays,
-                ray_directions=directions,
-            )
-
-            valid_candidates = []
-            if locations.size > 0:
-                # Compute distance from the origin for each hit point
-                dists = np.linalg.norm(locations - origin, axis=1)
-                # Filter out intersection points closer than eps.
-                for loc, d in zip(locations, dists):
-                    if d >= eps:
-                        valid_candidates.append(loc)
-
-            # If at least one valid intersection was found, choose one at random.
-            # Otherwise, select a fallback second contact: a random point within a 10cm-cube.
-            if valid_candidates:
-                chosen_loc = valid_candidates[np.random.randint(
-                    len(valid_candidates))]
-            else:
-                # Random offset in each dimension from uniform distribution over [-0.05, 0.05]
-                # (10cm cube centered on the origin point)
-                random_offset = np.random.uniform(-0.05, 0.05, size=3)
-                chosen_loc = origin + random_offset
-
-            contact_pairs_one.append(origin)
-            contact_pairs_two.append(chosen_loc)
-
-        # In case the above pass did not yield enough pairs, fill the remainder with
-        # pairs using random fallback contacts.
-        while len(contact_pairs_one) < num:
-            idx = np.random.randint(num_points)
-            origin = surface_points[idx]
-            random_offset = np.random.uniform(-0.05, 0.05, size=3)
-            fallback_second = origin + random_offset
-            contact_pairs_one.append(origin)
-            contact_pairs_two.append(fallback_second)
-
-        # Compute gripper poses (in normalized space) from the contact pairs.
-        Hs_norm = AntipodalGraspGenerator.define_gripper_pose(
-            np.array(contact_pairs_one), np.array(contact_pairs_two)
-        )
-        # Convert poses back to the original object's coordinate system.
-        Hs_denorm = self.denorm_grasp_pose(Hs_norm)
-
-        # Compute gripper widths (and clamp negative values to 0).
-        widths = np.linalg.norm(
-            np.array(contact_pairs_two) - np.array(contact_pairs_one), axis=1
-        )
-        widths = np.maximum(widths, 0)
-
-        # Scale widths back to the original object dimensions.
-        aux_info = {"width": widths * self.scale}
-
-        return Hs_denorm, aux_info
-
-    @classmethod
-    def define_gripper_pose(
-        cls, contact_one: np.ndarray, contact_two: np.ndarray
-    ) -> np.ndarray:
         """
-        Defines gripper pose transformation matrices based on contact point pairs.
-        Assumes input points are in a normalized space.
+        Return up to `num` grasps from a single pass; if fewer are found,
+        the caller should call again.
         """
-        assert len(contact_one) == len(contact_two)
-        if contact_one.ndim == 1:  # Handle single grasp case
-            contact_one = contact_one[np.newaxis, :]
-            contact_two = contact_two[np.newaxis, :]
+        self._ensure_normalized()
+        mesh = self._mesh_norm
 
-        num_grasps = len(contact_one)
+        starts, fidx = trimesh.sample.sample_surface(mesh, num)
+        if starts.size == 0:
+            return np.zeros((0, 4, 4)), {"width": np.zeros((0,), dtype=float)}
 
-        center = (contact_two + contact_one) / 2.0
-        # Gripper x-axis (approach direction for fingers) points from contact_one to contact_two
-        antipodal_direction = contact_two - contact_one
-        norm = np.linalg.norm(antipodal_direction, axis=1, keepdims=True)
+        n_out = mesh.face_normals[fidx]
+        n_out /= np.linalg.norm(n_out, axis=1, keepdims=True)
+        ray_dirs = -n_out
+        ray_origins = starts + ray_dirs * self._ray_eps  # nudge inward
 
-        # Avoid division by zero if contacts are coincident (should be filtered earlier)
-        valid_norm = ~np.isclose(norm, 0.0)
-        if not np.all(valid_norm):
-            print(
-                "Warning: Coincident contact points found in define_gripper_pose. Normals/Poses might be invalid."
-            )
-            # Handle invalid norms, e.g., set direction to a default or skip
-            # For now, normalize where possible, others might remain NaN/Inf
-            antipodal_direction[valid_norm.flatten()] /= norm[valid_norm]
-            # Set invalid ones to a default like [1, 0, 0] to avoid crashes downstream
-            antipodal_direction[~valid_norm.flatten()] = np.array([
-                1.0, 0.0, 0.0])
-        else:
-            antipodal_direction /= norm
+        locs, idx_ray, _ = mesh.ray.intersects_location(
+            ray_origins=ray_origins, ray_directions=ray_dirs
+        )
 
-        # Gripper z-axis (gripper approach direction) - random vector orthogonal to x-axis
-        random_vectors = np.random.randn(num_grasps, 3)
+        if locs.size == 0:
+            return np.zeros((0, 4, 4)), {"width": np.zeros((0,), dtype=float)}
 
-        # Calculate cross product for z-axis (approach)
-        approach_direction = np.cross(antipodal_direction, random_vectors)
-        approach_norm = np.linalg.norm(
-            approach_direction, axis=1, keepdims=True)
+        H_list, widths = [], []
 
-        # Handle cases where random vector is parallel to antipodal_direction
-        invalid_approach = np.isclose(approach_norm, 0.0).flatten()
-        attempts = 0
-        max_attempts_ortho = 10
-        while np.any(invalid_approach) and attempts < max_attempts_ortho:
-            attempts += 1
-            print(f"Warning: Regenerating approach vector, attempt {attempts}")
-            # Regenerate random vectors only for the failed ones
-            num_invalid = np.sum(invalid_approach)
-            random_vectors[invalid_approach] = np.random.rand(num_invalid, 3)
+        for i in range(len(ray_origins)):
+            hits_i = locs[idx_ray == i]
+            if hits_i.size == 0:
+                continue
+            origin = starts[i]
+            d = np.linalg.norm(hits_i - origin, axis=1)
+            good = d >= max(eps, self._ray_eps * 10)
+            if not np.any(good):
+                continue
+            hits_i = hits_i[good]
+            d = d[good]
 
-            # Recalculate cross product and norm for invalid ones
-            approach_direction[invalid_approach] = np.cross(
-                antipodal_direction[invalid_approach], random_vectors[invalid_approach]
-            )
-            approach_norm[invalid_approach] = np.linalg.norm(
-                approach_direction[invalid_approach], axis=1, keepdims=True
-            )
-            # Update mask
-            invalid_approach = np.isclose(approach_norm, 0.0).flatten()
+            for hit, width in zip(hits_i, d):
+                x = hit - origin
+                nx = np.linalg.norm(x)
+                if nx <= eps:
+                    continue
+                x = x / nx  # antipodal axis (deterministic)
 
-        if np.any(invalid_approach):
-            print(
-                "Warning: Failed to find orthogonal approach vector after multiple attempts. Using default Z=[0,0,1] cross X."
-            )
-            # Fallback: Try crossing with Z-axis, unless antipodal is Z
-            z_axis = np.array([0.0, 0.0, 1.0])
-            fallback_approach = np.cross(
-                antipodal_direction[invalid_approach], z_axis)
-            fallback_norm = np.linalg.norm(
-                fallback_approach, axis=1, keepdims=True)
-            # Check if antipodal was Z-axis
-            parallel_to_z = np.isclose(fallback_norm, 0.0).flatten()
-            if np.any(parallel_to_z):
-                y_axis = np.array([0.0, 1.0, 0.0])
-                fallback_approach[parallel_to_z] = np.cross(
-                    antipodal_direction[invalid_approach][parallel_to_z], y_axis
+                # build an orthonormal basis in the plane ⟂ x
+                aux = (
+                    np.array([1.0, 0.0, 0.0])
+                    if abs(x[0]) < 0.9
+                    else np.array([0.0, 1.0, 0.0])
                 )
-                fallback_norm[parallel_to_z] = np.linalg.norm(
-                    fallback_approach[parallel_to_z], axis=1, keepdims=True
-                )
+                z0 = np.cross(x, aux)
+                nz = np.linalg.norm(z0)
+                if nz <= 1e-12:
+                    aux = np.array([0.0, 0.0, 1.0])
+                    z0 = np.cross(x, aux)
+                    nz = np.linalg.norm(z0)
+                    if nz <= 1e-12:
+                        continue
+                z0 = z0 / nz
+                y0 = np.cross(z0, x)
 
-            valid_fallback = ~np.isclose(fallback_norm, 0.0).flatten()
-            if np.any(valid_fallback):
-                approach_direction[invalid_approach][valid_fallback] /= fallback_norm[
-                    valid_fallback
-                ]
-                # Mark as valid
-                approach_norm[invalid_approach][valid_fallback] = 1.0
-            # Remaining invalid approaches will be handled by normalization check below
+                thetas = np.random.uniform(0.0, 2.0 * np.pi, size=10)
+                cos_t = np.cos(thetas)[:, None]
+                sin_t = np.sin(thetas)[:, None]
+                z_stack = cos_t * z0[None, :] + sin_t * y0[None, :]
+                y_stack = np.cross(z_stack, x[None, :])
 
-        # Normalize valid approach directions
-        valid_approach_norm = ~np.isclose(approach_norm, 0.0)
-        if not np.all(valid_approach_norm):
-            print(
-                "Warning: Could not determine valid approach direction for some grasps."
-            )
-            approach_direction[~valid_approach_norm.flatten()] = np.array(
-                [0.0, 0.0, 1.0]
-            )  # Default if still invalid
-        else:
-            approach_direction /= approach_norm
+                center = (origin + hit) * 0.5
 
-        # Gripper y-axis (orthogonal to x and z)
-        co_direction = np.cross(approach_direction, antipodal_direction)
-        # No need to normalize y, as x and z are orthogonal unit vectors
+                for z, y in zip(z_stack, y_stack):
+                    H = np.eye(4)
+                    H[:3, 0] = x
+                    H[:3, 1] = y
+                    H[:3, 2] = z
+                    H[:3, 3] = center
+                    H_list.append(H)
+                    widths.append(width)
+                    if len(H_list) >= num:
+                        Hs = self._denorm_poses(np.stack(H_list, axis=0))
+                        w = np.asarray(widths, dtype=float) * self._scale_diag
+                        return Hs, {"width": w}
 
-        # Construct transformation matrices
-        Hs = np.zeros((num_grasps, 4, 4))
-        Hs[..., :3, 0] = antipodal_direction  # x-axis
-        Hs[..., :3, 1] = co_direction  # y-axis
-        Hs[..., :3, 2] = approach_direction  # z-axis
-        Hs[..., :3, 3] = center
-        Hs[..., 3, 3] = 1.0
-        return Hs
+        if not H_list:
+            return np.zeros((0, 4, 4)), {"width": np.zeros((0,), dtype=float)}
+        Hs = self._denorm_poses(np.stack(H_list, axis=0))
+        w = np.asarray(widths, dtype=float) * self._scale_diag
+        return Hs, {"width": w}
+
+
+if __name__ == "__main__":
+    # Showcase: create a cube, wrap it as a CollisionMeshObject, sample grasps, visualize.
+    import os
+    import tempfile
+
+    import trimesh
+
+    # Create a simple cube (edge = 0.1 m) and export so the generator loads from file
+    edge = 0.1
+    cube = trimesh.creation.box(extents=[edge, edge, edge])
+    cube.visual.face_colors = [200, 200, 200, 140]
+
+    tmpdir = tempfile.mkdtemp(prefix="mgs_demo_")
+    mesh_path = os.path.join(tmpdir, "cube.stl")
+    cube.export(mesh_path)
+
+    # Minimal concrete CollisionMeshObject for the demo
+    class _DemoCollisionObj(CollisionMeshObject):
+        def __init__(self, path: str, name: str = "cube", object_id: str = "demo"):
+            self._path = path
+            self.name = name
+            self.object_id = object_id
+
+        @property
+        def obj_file_path(self) -> str:
+            return self._path
+
+        def to_xml(self) -> Tuple[str, Dict[str, Any]]:
+            return super().to_xml()
+
+    demo_obj = _DemoCollisionObj(mesh_path)
+    gen = AntipodalGraspGenerator(demo_obj)
+
+    N = 100
+    Hs, aux = gen.generate_grasps(num=N)
+    print(f"Generated {len(Hs)} grasp poses in one pass.")
+
+    # Visualize
+    scene = trimesh.Scene([cube])
+
+    diag = float(np.linalg.norm(cube.extents))
+    axis_len = 0.25 * diag
+    contact_r = 0.03 * diag
+    max_show = min(len(Hs), 1000)
+
+    for i in range(max_show):
+        H = Hs[i]
+        width = float(aux["width"][i])
+
+        frame = trimesh.creation.axis(
+            origin_size=contact_r * 0.8,
+            axis_radius=contact_r * 0.4,
+            axis_length=axis_len,
+        )
+        frame.apply_transform(H)
+        scene.add_geometry(frame)
+
+        x = H[:3, 0]
+        c = H[:3, 3]
+        p1 = c - 0.5 * width * x
+        p2 = c + 0.5 * width * x
+
+        s1 = trimesh.creation.icosphere(radius=contact_r)
+        s1.apply_translation(p1)
+        s1.visual.face_colors = [255, 0, 0, 255]
+
+        s2 = trimesh.creation.icosphere(radius=contact_r)
+        s2.apply_translation(p2)
+        s2.visual.face_colors = [0, 255, 0, 255]
+
+        scene.add_geometry([s1, s2])
+
+    try:
+        scene.show()
+    except BaseException as e:
+        print(f"Viewer failed: {e}")
+        print(f"Meshes and temp files are under: {tmpdir}")
