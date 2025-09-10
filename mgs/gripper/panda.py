@@ -43,19 +43,19 @@ XML = """
       <default class="collision">
         <geom type="mesh" group="3"/>
         <default class="fingertip_pad_collision_1">
-          <geom type="box" size="0.0085 0.004 0.0085" pos="0 0.0055 0.0445" friction="2.4 0.3 0.1"/>
+          <geom type="box" size="0.0085 0.004 0.0085" pos="0 0.0055 0.0445" friction="1.5 0.3 0.1"/>
         </default>
         <default class="fingertip_pad_collision_2">
-          <geom type="box" size="0.003 0.002 0.003" pos="0.0055 0.002 0.05" friction="2.4 0.3 0.1"/>
+          <geom type="box" size="0.003 0.002 0.003" pos="0.0055 0.002 0.05" friction="1.5 0.3 0.1"/>
         </default>
         <default class="fingertip_pad_collision_3">
-          <geom type="box" size="0.003 0.002 0.003" pos="-0.0055 0.002 0.05" friction="2.4 0.3 0.1"/>
+          <geom type="box" size="0.003 0.002 0.003" pos="-0.0055 0.002 0.05" friction="1.5 0.3 0.1"/>
         </default>
         <default class="fingertip_pad_collision_4">
-          <geom type="box" size="0.003 0.002 0.0035" pos="0.0055 0.002 0.0395" friction="2.4 0.3 0.1"/>
+          <geom type="box" size="0.003 0.002 0.0035" pos="0.0055 0.002 0.0395" friction="1.5 0.3 0.1"/>
         </default>
         <default class="fingertip_pad_collision_5">
-          <geom type="box" size="0.003 0.002 0.0035" pos="-0.0055 0.002 0.0395" friction="2.4 0.3 0.1"/>
+          <geom type="box" size="0.003 0.002 0.0035" pos="-0.0055 0.002 0.0395" friction="1.5 0.3 0.1"/>
         </default>
       </default>
     </default>
@@ -238,7 +238,7 @@ class GripperPanda(MjShakableOpenCloseGripper, MjScannable):
 
         # Step the simulation to allow the controller to close the fingers
         # Keep existing step count
-        mujoco.mj_step(sim.model, sim.data, nstep=3000)
+        mujoco.mj_step(sim.model, sim.data, nstep=1000)
 
     def get_actuator_joint_names(self) -> List[str]:
         """Returns the names of the joints directly controlled by actuators."""

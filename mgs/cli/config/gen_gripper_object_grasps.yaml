@@ -2,6 +2,7 @@ defaults:
   - _self_
   - gripper: panda
 
+max_rounds: 1000
 # num target grasps to compute (will be checked in beginning)-> if enough exit
 target_grasps: 5000
 
@@ -9,10 +10,10 @@ target_grasps: 5000
 sample_grasps: 10000
 
 # num grasps to collect from sampling + collision filtering till stability eval.
-collect_grasps_till_eval: 100
+collect_grasps_till_eval: 2000
 
 # num grasps to collect till save
-collect_grasps_till_save: 100
+collect_grasps_till_save: 500
 
 # object id name
 object_id: 0
