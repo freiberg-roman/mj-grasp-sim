@@ -15,16 +15,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import secrets
-import time
 
 
 def generate_unique_hash(length=16):
     random_string = secrets.token_hex(length)
     return random_string
-
-
-def generate_unique_filename(extension="h5", length=32, addon=""):
-    random_string = secrets.token_hex(length // 2)
-    timestamp = int(time.time() * 1000)
-    unique_filename = f"{random_string}_{timestamp}{addon}.{extension}"
-    return unique_filename

@@ -142,6 +142,7 @@ class GravitylessObjectGrasping(MjSimulation):
         self,
         poses: SE3Pose,
         joints: np.ndarray,
+        impulse_force=300.0,
         enough_stable=None,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
@@ -163,7 +164,9 @@ class GravitylessObjectGrasping(MjSimulation):
                 f"Joints array has incorrect dimension ({joints.shape[1]}), expected {len(self.gripper.get_actuator_joint_names())}."
             )
 
-        IMPULSE_FORCE_N = 300.0  # one-step force magnitude (N) -> impulse J = F*dt
+        IMPULSE_FORCE_N = float(
+            impulse_force
+        )  # one-step force magnitude (N) -> impulse J = F*dt
         object_bid = self.model.body(self.obj.name).id  # apply at object COM
 
         results: List[bool] = []
