@@ -98,7 +98,7 @@ XML = """
       <default class="collision">
         <geom group="3" type="mesh"/>
         <default class="finger_collision">
-          <geom condim="4" solimp="2 1 0.01" solref="0.01 1" friction="1 0.005 0.0001"/>
+          <geom condim="4" solimp="2 1 0.01" solref="0.01 1" friction="1.5 0.005 0.0001"/>
         </default>
       </default>
     </default>
@@ -284,14 +284,14 @@ class GripperVX300(MjShakableOpenCloseGripper, MjScannable):
         # Don't set qpos here
 
     def width_to_joints(self, width: float):
-        clamped_width = np.clip(width, self.MIN_WIDTH, self.MAX_WIDTH)
+        clamped_width = np.clip(width + self.MIN_WIDTH, self.MIN_WIDTH, self.MAX_WIDTH)
         target_q1 = 0.5 * clamped_width
         target_q2 = -0.5 * clamped_width
 
         # Clip again just in case of float issues (though clamping width should suffice)
         target_q1 = np.clip(target_q1, self.Q1_RANGE[0], self.Q1_RANGE[1])
         target_q2 = np.clip(target_q2, self.Q2_RANGE[0], self.Q2_RANGE[1])
-        return target_q1, target_q2
+        return np.stack([target_q1, target_q2], axis=-1)
 
     def close_gripper_at(self, sim: MjSimulation, pose: SE3Pose):
         """
@@ -310,7 +310,7 @@ class GripperVX300(MjShakableOpenCloseGripper, MjScannable):
 
         # Step the simulation to allow the controller to close the fingers
         # Keep existing step count
-        mujoco.mj_step(sim.model, sim.data, nstep=3000)
+        mujoco.mj_step(sim.model, sim.data, nstep=1000)
 
     def get_freejoint_idxs(self, sim: MjSimulation) -> List[int]:
         """Gets the qpos indices for the 6-DOF free joint of the base ('gripper_link')."""

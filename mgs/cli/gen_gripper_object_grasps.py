@@ -7,6 +7,8 @@ from omegaconf import DictConfig
 
 from mgs.env.gravityless_object_grasping import GravitylessObjectGrasping
 from mgs.gripper.panda import GripperPanda
+from mgs.gripper.selector import get_gripper
+from mgs.gripper.vx300 import GripperVX300
 from mgs.obj.selector import get_object
 from mgs.sampler.antipodal import AntipodalGraspGenerator
 from mgs.util.const import ASSET_PATH
@@ -57,11 +59,7 @@ def main(cfg: DictConfig):
     obj = get_object(object_id)
     assert cfg.gripper.grasp_sampler == "Antipodal", "Unsupported sampler"
     sampler = AntipodalGraspGenerator(obj)
-    gripper = GripperPanda(
-        SE3Pose.from_vec(
-            np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]), type="wxyz", layout="pq"
-        )
-    )
+    gripper = get_gripper(cfg.gripper)
 
     print(
         f"Generating grasp candidates using gripper: {cfg.gripper.name}"

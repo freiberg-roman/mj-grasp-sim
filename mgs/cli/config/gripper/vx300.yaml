@@ -6,6 +6,7 @@ id: "vx300"
 qpos: [0.057, -0.057] # range +-0.021 +-0.057
 qpos_close: [0.021, -0.021] # close
 grasp_type: "default"
+grasp_sampler: "Antipodal"
 
 segmentation:
   left_finger: [6]

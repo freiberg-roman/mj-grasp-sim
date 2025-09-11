@@ -20,7 +20,7 @@ collect_grasps_till_save: 1000
 object_id: 0
 
 # force per impulse
-force: 300.0
+force: 150.0
 
 hydra:
   job:
