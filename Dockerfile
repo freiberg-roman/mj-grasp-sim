@@ -31,5 +31,10 @@ ENV MGS_INPUT_DIR=/in
 # Copies the current directory contents into the container at /app
 COPY . .
 RUN pip install --upgrade pip && pip install -e .
-# type in mgs.cli.<script to execute>
-ENTRYPOINT ["python", "-m", " "]
+# type in <script to execute>
+ENTRYPOINT ["python", "-m"]
+
+FROM base-app AS mgs-jax
+RUN pip install -e .[jax]
+ENTRYPOINT ["python", "-m"]
+
