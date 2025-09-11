@@ -8,20 +8,100 @@ from omegaconf import DictConfig
 from mgs.env.selector import get_env, get_env_from_dict
 from mgs.gripper.selector import get_gripper
 from mgs.obj.selector import get_objects
-from mgs.util.geo.transforms import SE3Pose
 from mgs.util.file import generate_unique_hash
+from mgs.util.geo.transforms import SE3Pose
 
 
-def get_grasps(gripper_name, obj_id, gripper_type=""):
-    grasp_path = os.path.join(  # type: ignore
+def fps_rank_grasps(
+    poses_mat: np.ndarray,
+    k=None,
+    rot_weight: float = 0.05,
+    seed=None,
+) -> np.ndarray:
+    """
+    Farthest-point sampling (greedy) over SE(3) grasps.
+
+    Args
+    ----
+    poses_mat : (N,4,4) homogeneous transforms for grasps.
+    k         : how many to keep (defaults to N = full ranking).
+    rot_weight: length scale (meters per radian) for blending orientation.
+                Larger -> orientation matters more.
+    seed      : optional RNG seed for deterministic start when data is flat.
+
+    Returns
+    -------
+    order : (k,) int indices giving a *ranking* (most diverse first).
+    """
+    assert poses_mat.ndim == 3 and poses_mat.shape[1:] == (4, 4)
+    N = poses_mat.shape[0]
+    if N == 0:
+        return np.empty((0,), dtype=np.int64)
+    if k is None or k > N:
+        k = N
+
+    # Extract positions + unit quaternions (wxyz) via SE3Pose for robustness.
+    se3 = SE3Pose.from_mat(poses_mat, type="wxyz")
+    X = se3.pos.astype(np.float32)  # (N,3)
+    Q = se3.quat.astype(np.float32)  # (N,4), unit
+
+    # Helper: angular distance (radians) between quats, using double-cover fix.
+    def ang_dist_to(q_sel: np.ndarray, Q_all: np.ndarray) -> np.ndarray:
+        dots = np.abs(np.sum(q_sel[None, :] * Q_all, axis=1))  # |dot|
+        dots = np.clip(dots, -1.0, 1.0)
+        return 2.0 * np.arccos(dots).astype(np.float32)  # in [0, pi]
+
+    rng = np.random.default_rng(seed)
+    # Start: pick the pose farthest from the centroid (good heuristic), fallback random if degenerate.
+    centroid = X.mean(axis=0, keepdims=True)
+    d0 = np.linalg.norm(X - centroid, axis=1)
+    start = int(np.argmax(d0)) if np.any(d0 > 0) else int(rng.integers(N))
+
+    selected = np.empty(k, dtype=np.int64)
+    selected[0] = start
+
+    # Current distance to the selected set (min over selected so far)
+    # Init with distance to the first selected
+    d_pos = np.linalg.norm(X - X[start], axis=1)  # (N,)
+    d_rot = ang_dist_to(Q[start], Q)  # (N,)
+    d_min = np.sqrt(d_pos**2 + (rot_weight * d_rot) ** 2)  # (N,)
+
+    # Greedy updates
+    for t in range(1, k):
+        # pick farthest from current selected set
+        idx = int(np.argmax(d_min))
+        selected[t] = idx
+
+        # update distances using new center
+        d_pos = np.minimum(d_min, np.linalg.norm(X - X[idx], axis=1))
+        d_rot = ang_dist_to(Q[idx], Q)
+        d_comb = np.sqrt(
+            np.linalg.norm(X - X[idx], axis=1) ** 2 + (rot_weight * d_rot) ** 2
+        )
+        # maintain min distance to any selected
+        d_min = np.minimum(d_min, d_comb)
+
+    return selected
+
+
+def get_grasps(gripper_name, obj_id):
+    grasp_dir = os.path.join(  # type: ignore
         os.getenv("MGS_INPUT_DIR"),  # type: ignore
         gripper_name,
         obj_id,
-        "stable_grasps.npz",
     )
-    grasp_dict = np.load(grasp_path)
-    poses = grasp_dict["pose"]
-    joints = grasp_dict["joints"]
+    poses, joints = [], []
+    for file in os.listdir(grasp_dir):
+        path = os.path.join(grasp_dir, file)
+        grasp_dict = np.load(path)
+        poses.append(grasp_dict["poses"])
+        joints.append(grasp_dict["joints"])
+
+    if len(poses) == 0 or len(joints) == 0:
+        return None, None
+
+    poses = np.concatenate(poses, axis=0)
+    joints = np.concatenate(joints, axis=0)
     return poses, joints
 
 
@@ -34,8 +114,7 @@ def gen_stable_scene(cfg: DictConfig):
         ),
     )
 
-    env = get_env(cfg.env, gripper=deepcopy(
-        gripper), obj_list=deepcopy(obj_list))
+    env = get_env(cfg.env, gripper=deepcopy(gripper), obj_list=deepcopy(obj_list))
     env.gen_clutter()
     scene_dict = env.to_dict()
 
@@ -95,9 +174,12 @@ def filter_grasps(cfg: DictConfig, scene_def):
         SE3Pose.from_mat(deepcopy(all_poses), type="wxyz"),
         deepcopy(all_joints),
     )
-    enough_collision_free = 128
-    if sum(collision_free_mask) < enough_collision_free:
-        raise ValueError("Not enough collision free grasps!")
+
+    if sum(collision_free_mask) <= 0:
+        raise ValueError(
+            f"Not enough collision free grasps! Only: {sum(collision_free_mask)}"
+        )
+
     collision_free_poses = all_poses[collision_free_mask]
     collision_free_joints = all_joints[collision_free_mask]
     collision_free_obj_indices = obj_indices[collision_free_mask]
@@ -107,19 +189,22 @@ def filter_grasps(cfg: DictConfig, scene_def):
     collision_obj_indices = obj_indices[~collision_free_mask]
 
     if not cfg.only_collision_free:
-        shuffle_indices = np.random.permutation(len(collision_free_poses))
-        collision_free_poses = collision_free_poses[shuffle_indices]
-        collision_free_joints = collision_free_joints[shuffle_indices]
-        collision_free_obj_indices == collision_free_obj_indices[shuffle_indices]
+        order = fps_rank_grasps(
+            collision_free_poses,
+            k=None,  # keep ordering for all; set to an int to subsample if desired
+            rot_weight=getattr(cfg, "fps_rot_weight", 0.1),
+            seed=getattr(cfg, "fps_seed", None),
+        )
+        collision_free_poses = collision_free_poses[order]
+        collision_free_joints = collision_free_joints[order]
+        collision_free_obj_indices = collision_free_obj_indices[order]
 
-        enough_stable = min(128, cfg.num_objects * 32)
         stable_grasp_mask = env.grasp_stable_mask(
             SE3Pose.from_mat(deepcopy(collision_free_poses), type="wxyz"),
             deepcopy(collision_free_joints),
             deepcopy(scene_def["env_state"]["state"]),
-            enough_stable=enough_stable,
         )
-        if sum(stable_grasp_mask) < enough_stable:
+        if sum(stable_grasp_mask) <= 0:
             raise ValueError("Not enough stable grasps!")
 
         result_poses = collision_free_poses[stable_grasp_mask]
@@ -195,7 +280,9 @@ def main(cfg: DictConfig):
             )
         for grasps in invalid_grasps:
             obj_id, obj_name = grasps["object_id"], grasps["object_name"]
-            object_path = os.path.join(output_dir, obj_id + "_" + obj_name + "_" + "collision")
+            object_path = os.path.join(
+                output_dir, obj_id + "_" + obj_name + "_" + "collision"
+            )
             np.savez(
                 object_path,
                 **{

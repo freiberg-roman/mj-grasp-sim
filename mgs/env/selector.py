@@ -16,15 +16,12 @@
 
 from omegaconf import DictConfig
 
-from mgs.env.bin_picking import BinPickingEnv
 from mgs.env.clutter_table import ClutterTableEnv
 
 
 def get_env(cfg: DictConfig, gripper, obj_list):
     if cfg.name == "ClutterTable":
         env = ClutterTableEnv(gripper, objects=obj_list)
-    elif cfg.name == "BinPicking":
-        env = BinPickingEnv(gripper, objects=obj_list)
     else:
         raise ValueError(f"Unknown environment {cfg.name}")
     return env
@@ -33,8 +30,6 @@ def get_env(cfg: DictConfig, gripper, obj_list):
 def get_env_from_dict(cfg: DictConfig, scene_dict):
     if cfg.name == "ClutterTable":
         env = ClutterTableEnv.from_dict(scene_dict)
-    elif cfg.name == "BinPicking":
-        env = BinPickingEnv.from_dict(scene_dict)
     else:
         raise ValueError(f"Unknown environment {cfg.name}")
     return env
