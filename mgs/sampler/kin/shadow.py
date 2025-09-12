@@ -8,25 +8,14 @@ import numpy as np
 import plotly.graph_objects as go
 from flax import nnx  # Assuming nnx is used
 
-from mgs.sampler.kin.base import (
-    KinematicsModel,
-    forward_kinematic_point_transform,
-    kinematic_pcd_transform,
-)
-from mgs.sampler.kin.jax_util import normalize_vector
+from mgs.sampler.kin.base import KinematicsModel
 
 
 class ShadowKinematicsModel(nnx.Module, KinematicsModel):
-    def __init__(self, lmax=2, num_emb_channels=64):
-        self.lmax = lmax
-        self.num_channels = num_emb_channels
+    def __init__(self):
+
         self.num_dofs = 22
         self.num_extra_dofs = 0
-        self.embedding = nnx.Param(
-            jax.random.normal(
-                nnx.Rngs(0)(), shape=(self.num_dofs, (lmax + 1) ** 2, num_emb_channels)
-            )
-        )
         self.kinematics_graph = [
             [0, 1, 2, 3],  # rh_FF
             [4, 5, 6, 7],  # rh_MF

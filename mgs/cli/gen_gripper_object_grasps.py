@@ -6,12 +6,11 @@ import numpy as np
 from omegaconf import DictConfig
 
 from mgs.env.gravityless_object_grasping import GravitylessObjectGrasping
-from mgs.gripper.panda import GripperPanda
 from mgs.gripper.selector import get_gripper
-from mgs.gripper.vx300 import GripperVX300
 from mgs.obj.selector import get_object
 from mgs.sampler.antipodal import AntipodalGraspGenerator
 from mgs.sampler.contact import ContactBasedDiff
+from mgs.sampler.kin.allegro import AllegroKinematicsModel
 from mgs.sampler.kin.shadow import ShadowKinematicsModel
 from mgs.util.const import ASSET_PATH
 from mgs.util.file import generate_unique_hash  # uses secrets.token_hex under the hood
@@ -191,7 +190,7 @@ def main(cfg: DictConfig):
             elif cfg.gripper.grasp_sampler == "ContactGradient":
                 all_kins = {
                     "ShadowHand": ShadowKinematicsModel(),
-                    "Allegro": None,
+                    "AllegroGripper": AllegroKinematicsModel(),
                 }
                 kin_model = all_kins[cfg.gripper.name]
                 poses_mat, aux_info = sampler.generate_grasps(  # type: ignore

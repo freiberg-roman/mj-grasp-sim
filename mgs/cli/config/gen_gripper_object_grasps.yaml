@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - gripper: panda
+  - gripper: shadow
 
 max_rounds: 100
 
@@ -8,13 +8,13 @@ max_rounds: 100
 target_grasps: 5000
 
 # collect grasps on sampling
-sample_grasps: 50000
+sample_grasps: 10000
 
 # num grasps to collect from sampling + collision filtering till stability eval.
-collect_grasps_till_eval: 2000
+collect_grasps_till_eval: 10
 
 # num grasps to collect till save
-collect_grasps_till_save: 1000
+collect_grasps_till_save: 20
 
 # object id name
 object_id: 0

@@ -1,6 +1,6 @@
-from jax.lax import fori_loop
 import jax
 import jax.numpy as jnp
+from jax.lax import fori_loop
 
 
 def theta_norm_to_denorm(

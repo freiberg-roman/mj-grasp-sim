@@ -1,4 +1,3 @@
-import time
 from itertools import permutations
 from typing import Any, Dict, Tuple
 
@@ -11,14 +10,15 @@ from flax import nnx
 
 from mgs.obj.base import CollisionMeshObject
 from mgs.sampler.base import GraspGenerator
-from mgs.sampler.kin.base import KinematicsModel, forward_kinematic_point_transform
-from mgs.sampler.kin.jax_util import (
+from mgs.sampler.helper import (
     farthest_point_sampling,
     find_best_assignment_and_reorder_targets,
     matrix_to_rotation_6d,
     normalize_vector,
     rotation_6d_to_matrix,
 )
+from mgs.sampler.kin.base import KinematicsModel
+from mgs.sampler.kin.op import forward_kinematic_point_transform
 from mgs.util.geo.transforms import SE3Pose
 
 NUM_SURFACE_SAMPLES = 30000
@@ -244,15 +244,15 @@ class ContactBasedDiff(GraspGenerator):
         transformed_points = nnx.vmap(
             nnx.vmap(
                 forward_kinematic_point_transform,
-                in_axes=(None, 0, 0, None, None),
+                in_axes=(None, 0, 0, None, None),  # map over point & joint_idx
             ),
-            in_axes=(0, None, None, None, None),
+            in_axes=(0, None, None, None, None),  # map over batch of thetas
         )(
-            trainer.to_opt.joints.value,
+            trainer.to_opt.joints.value,  # (B, D)
             gripper.local_fingertip_contact_positions.value[
                 jnp.arange(num_contact_points), idx, :
-            ],
-            gripper.fingertip_idx.value,
+            ],  # (K, 3) local pts per finger
+            gripper.fingertip_idx.value,  # (K,) joint indices
             g,
             s,
         )
