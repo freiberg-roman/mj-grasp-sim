@@ -11,6 +11,8 @@ from mgs.gripper.selector import get_gripper
 from mgs.gripper.vx300 import GripperVX300
 from mgs.obj.selector import get_object
 from mgs.sampler.antipodal import AntipodalGraspGenerator
+from mgs.sampler.contact import ContactBasedDiff
+from mgs.sampler.kin.shadow import ShadowKinematicsModel
 from mgs.util.const import ASSET_PATH
 from mgs.util.file import generate_unique_hash  # uses secrets.token_hex under the hood
 from mgs.util.geo.transforms import SE3Pose
@@ -57,8 +59,15 @@ def main(cfg: DictConfig):
 
     # --- components ---
     obj = get_object(object_id)
-    assert cfg.gripper.grasp_sampler == "Antipodal", "Unsupported sampler"
-    sampler = AntipodalGraspGenerator(obj)
+    assert cfg.gripper.grasp_sampler in [
+        "Antipodal",
+        "ContactGradient",
+    ], "Unsupported sampler"
+    sampler = (
+        AntipodalGraspGenerator(obj)
+        if cfg.gripper.grasp_sampler == "Antipodal"
+        else ContactBasedDiff(obj)
+    )
     gripper = get_gripper(cfg.gripper)
 
     print(
@@ -172,12 +181,27 @@ def main(cfg: DictConfig):
         collected_poses, collected_joints = [], []
 
         while sum(len(p) for p in collected_poses) < int(cfg.collect_grasps_till_eval):
-            poses_mat, aux_info = sampler.generate_grasps(num=int(cfg.sample_grasps))
+
+            if cfg.gripper.grasp_sampler == "Antipodal":
+                poses_mat, aux_info = sampler.generate_grasps(
+                    num=int(cfg.sample_grasps)  # type: ignore
+                )
+                padding = 0.01
+                joints = gripper.width_to_joints(aux_info["width"] + padding)
+            elif cfg.gripper.grasp_sampler == "ContactGradient":
+                all_kins = {
+                    "ShadowHand": ShadowKinematicsModel(),
+                    "Allegro": None,
+                }
+                kin_model = all_kins[cfg.gripper.name]
+                poses_mat, aux_info = sampler.generate_grasps(  # type: ignore
+                    num=int(cfg.sample_grasps), gripper=kin_model  # type: ignore
+                )
+                joints = aux_info["joints"]
+            else:
+                raise ValueError("Not known grasp sampler")
             if len(poses_mat) == 0:
                 continue
-
-            padding = 0.01
-            joints = gripper.width_to_joints(aux_info["width"] + padding)
 
             poses_se3 = SE3Pose.from_mat(poses_mat)
             collision_mask = env.grasp_collision_mask(

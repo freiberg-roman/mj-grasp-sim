@@ -1,16 +1,16 @@
-from mgs.util.geo.transforms import SE3Pose
-from tqdm import tqdm
 import os
 
 import hydra
 import numpy as np
 from omegaconf import DictConfig
+from tqdm import tqdm
 
+from mgs.gripper.panda import GripperPanda
+from mgs.gripper.vx300 import GripperVX300
 from mgs.obj.selector import get_object
 from mgs.sampler.antipodal import AntipodalGraspGenerator
 from mgs.util.const import ASSET_PATH
-from mgs.gripper.vx300 import GripperVX300
-from mgs.gripper.panda import GripperPanda
+from mgs.util.geo.transforms import SE3Pose
 
 
 @hydra.main(config_path="config", config_name="gen_grasp_candidates")
@@ -32,8 +32,9 @@ def main(cfg: DictConfig):
     sampler = None
     if cfg.gripper.name in ["ShadowHand", "LeapGripper"]:
         from mgs.sampler.contact import ContactBasedDiff
-        from mgs.sampler.kin.shadow import ShadowKinematicsModel
         from mgs.sampler.kin.leap import LeapHandKinematicsModel
+        from mgs.sampler.kin.shadow import ShadowKinematicsModel
+
         sampler = ContactBasedDiff(obj)
         all_kins = {
             "ShadowHand": ShadowKinematicsModel(),
@@ -68,6 +69,7 @@ def main(cfg: DictConfig):
             joints = np.concatenate(all_joints, axis=0)
         else:
             import jax.numpy as jnp
+
             Hs_batch, aux_info_batch = sampler.generate_grasps(
                 num_to_generate, kin_model
             )

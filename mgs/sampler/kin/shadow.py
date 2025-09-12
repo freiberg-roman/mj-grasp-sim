@@ -1,17 +1,19 @@
-from mgs.sampler.kin.base import (
-    kinematic_pcd_transform,
-    forward_kinematic_point_transform,
-)
-from flax import nnx  # Assuming nnx is used
-import sys
-from mgs.sampler.kin.jax_util import normalize_vector
-import plotly.graph_objects as go
-import numpy as np
-import os
-import jax.numpy as jnp
 import math
+import os
+import sys
+
 import jax
-from mgs.sampler.kin.base import KinematicsModel
+import jax.numpy as jnp
+import numpy as np
+import plotly.graph_objects as go
+from flax import nnx  # Assuming nnx is used
+
+from mgs.sampler.kin.base import (
+    KinematicsModel,
+    forward_kinematic_point_transform,
+    kinematic_pcd_transform,
+)
+from mgs.sampler.kin.jax_util import normalize_vector
 
 
 class ShadowKinematicsModel(nnx.Module, KinematicsModel):

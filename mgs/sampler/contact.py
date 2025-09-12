@@ -1,24 +1,25 @@
 import time
-import numpy as np
+from itertools import permutations
+from typing import Any, Dict, Tuple
+
 import jax
+import jax.numpy as jnp
+import numpy as np
 import optax
-from typing import Tuple, Dict, Any
 import trimesh
+from flax import nnx
 
 from mgs.obj.base import CollisionMeshObject
 from mgs.sampler.base import GraspGenerator
-from mgs.util.geo.transforms import SE3Pose
-from itertools import permutations
-from flax import nnx
+from mgs.sampler.kin.base import KinematicsModel, forward_kinematic_point_transform
 from mgs.sampler.kin.jax_util import (
-    matrix_to_rotation_6d,
-    rotation_6d_to_matrix,
-    normalize_vector,
     farthest_point_sampling,
     find_best_assignment_and_reorder_targets,
+    matrix_to_rotation_6d,
+    normalize_vector,
+    rotation_6d_to_matrix,
 )
-from mgs.sampler.kin.base import KinematicsModel, forward_kinematic_point_transform
-import jax.numpy as jnp
+from mgs.util.geo.transforms import SE3Pose
 
 NUM_SURFACE_SAMPLES = 30000
 LOCAL_REGION_RADIUS = 0.10  # 10 cm
@@ -109,12 +110,12 @@ def update(
     def loss_fn(to_opt, i):
         transformed_values = nnx.vmap(
             forward_kinematic_point_transform,
-            in_axes=(None, 0, None, None),  # over stack
+            in_axes=(None, 0, None, None, None),  # over stack
         )(
             to_opt.joints.value,
             forward_kin,
             contact_idx,
-            kin,
+            *nnx.split(kin),
         )
         transformed_values = (
             jnp.einsum(
@@ -197,14 +198,11 @@ class ContactBasedDiff(GraspGenerator):
         num_contact_points = len(gripper.fingertip_idx)
         rng_key = jax.random.PRNGKey(0)
 
-        rand_vals = jax.random.uniform(
-            rng_key, shape=(seeds.shape[0], seeds.shape[0]))
+        rand_vals = jax.random.uniform(rng_key, shape=(seeds.shape[0], seeds.shape[0]))
         rand_vals = jnp.where(admissable_target_positions, rand_vals, -jnp.inf)
-        random_selected_idx = jnp.argsort(rand_vals, axis=1)[
-            :, -num_contact_points:]
+        random_selected_idx = jnp.argsort(rand_vals, axis=1)[:, -num_contact_points:]
         contact_points_for_seeds = jnp.take(seeds, random_selected_idx, axis=0)
-        contact_points_normals = jnp.take(
-            seed_normals, random_selected_idx, axis=0)
+        contact_points_normals = jnp.take(seed_normals, random_selected_idx, axis=0)
         contact_points_for_seeds_offset = (
             contact_points_for_seeds + TARGET_OFFSET_DISTANCE * contact_points_normals
         )
@@ -219,8 +217,7 @@ class ContactBasedDiff(GraspGenerator):
         (align_rot, align_pos) = gripper.align_to_approach.value
         initial_rotations = jnp.stack([x_axis, y_axis, z_axis], axis=-1)
         align_pos = jnp.einsum("...ij,j->...i", initial_rotations, align_pos)
-        initial_rotations = jnp.einsum(
-            "...ij,jk->...ik", initial_rotations, align_rot)
+        initial_rotations = jnp.einsum("...ij,jk->...ik", initial_rotations, align_rot)
         initial_positions = seeds + POSE_OFFSET_DISTANCE * seed_normals
         initial_positions = initial_positions + align_pos
 
@@ -243,21 +240,24 @@ class ContactBasedDiff(GraspGenerator):
             minval=0,
             maxval=num_possible_fingertips,
         )
+        g, s = nnx.split(gripper)
         transformed_points = nnx.vmap(
-            nnx.vmap(forward_kinematic_point_transform,
-                     in_axes=(None, 0, 0, None)),
-            in_axes=(0, None, None, None),
+            nnx.vmap(
+                forward_kinematic_point_transform,
+                in_axes=(None, 0, 0, None, None),
+            ),
+            in_axes=(0, None, None, None, None),
         )(
             trainer.to_opt.joints.value,
-            gripper.local_fingertip_contact_positions[
+            gripper.local_fingertip_contact_positions.value[
                 jnp.arange(num_contact_points), idx, :
             ],
-            gripper.fingertip_idx,
-            gripper,
+            gripper.fingertip_idx.value,
+            g,
+            s,
         )
         transformed_points = (
-            jnp.einsum("bij, bnj -> bni", initial_rotations,
-                       transformed_points)
+            jnp.einsum("bij, bnj -> bni", initial_rotations, transformed_points)
             + initial_positions[:, None, :]
         )
 
@@ -289,8 +289,7 @@ class ContactBasedDiff(GraspGenerator):
         trans = trans[:, :, None]  # reshape to (num, 3, 1)
         Hs_3x4 = jnp.concatenate([rot, trans], axis=-1)
 
-        last_row = jnp.tile(jnp.array([0, 0, 0, 1])[
-                            None, None, :], (num, 1, 1))
+        last_row = jnp.tile(jnp.array([0, 0, 0, 1])[None, None, :], (num, 1, 1))
 
         Hs = jnp.concatenate([Hs_3x4, last_row], axis=1)
         aux_info = {"joints": joints}

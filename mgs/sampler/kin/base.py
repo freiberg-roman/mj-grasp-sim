@@ -1,12 +1,14 @@
+from abc import ABC
+from typing import List
+
 import jax
 import jax.numpy as jnp
 from flax import nnx
-from abc import ABC
-from typing import List
+
 from mgs.sampler.kin.jax_util import (
     quaternion_apply_jax,
-    se3_raw_mupltiply,
     quaternion_from_axis_angle,
+    se3_raw_mupltiply,
     similarity_transform,
     transform_points_jax,
 )
@@ -77,13 +79,11 @@ def kinematic_pcd_transform(
     return points
 
 
-@nnx.jit
+@jax.jit
 def forward_kinematic_point_transform(
-    theta: jnp.ndarray,
-    local_point: jnp.ndarray,
-    joint_idx: jnp.ndarray,
-    kin_model: KinematicsModel,
+    theta: jnp.ndarray, local_point: jnp.ndarray, joint_idx: jnp.ndarray, k_g, k_s
 ):
+    kin_model = nnx.merge(k_g, k_s)
     all_link_transforms = jnp.zeros(shape=(kin_model.num_dofs + 1, 7))
     identity_tf = jnp.array([1.0, 0, 0, 0, 0, 0, 0], dtype=jnp.float32)
     all_link_transforms = all_link_transforms.at[0].set(identity_tf)
