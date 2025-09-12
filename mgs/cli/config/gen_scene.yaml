@@ -10,6 +10,8 @@ defaults:
 num_objects: 5
 only_collision_free: False
 save_collision_grasps: False
+min_stable: 500
+enough_stable: 1500
 
 hydra:
   job:

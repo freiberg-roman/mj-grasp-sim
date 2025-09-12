@@ -102,6 +102,13 @@ def get_grasps(gripper_name, obj_id):
 
     poses = np.concatenate(poses, axis=0)
     joints = np.concatenate(joints, axis=0)
+
+    idx = np.random.permutation(len(poses))
+    poses = poses[idx][:50000]
+    joints = joints[idx][:50000]
+    order = fps_rank_grasps(poses, rot_weight=0.1, k=5000)
+    poses, joints = poses[order], joints[order]
+
     return poses, joints
 
 
@@ -203,8 +210,9 @@ def filter_grasps(cfg: DictConfig, scene_def):
             SE3Pose.from_mat(deepcopy(collision_free_poses), type="wxyz"),
             deepcopy(collision_free_joints),
             deepcopy(scene_def["env_state"]["state"]),
+            enough_stable=cfg.enough_stable,
         )
-        if sum(stable_grasp_mask) <= 0:
+        if sum(stable_grasp_mask) <= cfg.min_stable:
             raise ValueError("Not enough stable grasps!")
 
         result_poses = collision_free_poses[stable_grasp_mask]
