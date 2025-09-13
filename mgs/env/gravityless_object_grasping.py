@@ -178,80 +178,74 @@ class GravitylessObjectGrasping(MjSimulation):
         # keep the user's original sim state
         initial_state = self.get_state()
         try:
-            with mujoco.viewer.launch_passive(self.model, self.data) as viewer:
-                for i in tqdm(range(num_grasps)):
-                    if enough_stable is not None and sum(results) >= enough_stable:
-                        # early-out fill: mark remaining as not evaluated
-                        results.append(False)
-                        continue
+            for i in tqdm(range(num_grasps)):
+                if enough_stable is not None and sum(results) >= enough_stable:
+                    # early-out fill: mark remaining as not evaluated
+                    results.append(False)
+                    continue
 
-                    # --- close once and save the post-close state ---
-                    mujoco.mj_resetData(self.model, self.data)
+                # --- close once and save the post-close state ---
+                mujoco.mj_resetData(self.model, self.data)
+                mujoco.mj_forward(self.model, self.data)
+
+                b2c = self.gripper.base_to_contact_transform()
+                pose_processed = poses[i] @ b2c
+                self.set_qpos(joints[i], gripper_joint_idxs)
+                self.gripper.set_pose(self, pose_processed)
+                mujoco.mj_forward(self.model, self.data)
+
+                self.gripper.close_gripper_at(self, pose_processed)
+
+                if not self.check_contact_with_object():
+                    results.append(False)
+                    continue
+
+                # snapshot the post-close state for deterministic, repeatable kicks
+                closed_state = self.get_state()
+
+                # world rotation of the grasp frame
+                Rg = pose_processed.to_mat()[:3, :3].astype(float)
+
+                # local unit axes in grasp frame
+                local_dirs = np.eye(3, dtype=float)
+                dirs_world = np.concatenate(
+                    [
+                        Rg @ local_dirs[:, [0, 1, 2]],  # +x,+y,+z
+                        -(Rg @ local_dirs[:, [0, 1, 2]]),
+                    ],
+                    axis=1,
+                ).T  # -x,-y,-z
+                # dirs_world: shape (6, 3)
+
+                all_pass = True
+                for d in dirs_world:
+                    # restore saved state
+                    self.set_state(closed_state)
                     mujoco.mj_forward(self.model, self.data)
 
-                    b2c = self.gripper.base_to_contact_transform()
-                    pose_processed = poses[i] @ b2c
-                    self.set_qpos(joints[i], gripper_joint_idxs)
-                    self.gripper.set_pose(self, pose_processed)
-                    mujoco.mj_forward(self.model, self.data)
-                    viewer.sync()
+                    F = IMPULSE_FORCE_N * d
+                    for i in range(5):
+                        self.data.xfrc_applied[object_bid, :3] += F
+                        mujoco.mj_step(
+                            self.model, self.data, nstep=1
+                        )  # integrates one step
+                        self.data.xfrc_applied[object_bid, :] = (
+                            0.0  # clear so it doesn't persist
+                        )
+                        mujoco.mj_step(
+                            self.model, self.data, nstep=10
+                        )  # integrates one step
 
-                    self.gripper.close_gripper_at(self, pose_processed)
+                    mujoco.mj_step(self.model, self.data, nstep=500)
 
+                    # check contact right after the kick
                     if not self.check_contact_with_object():
-                        results.append(False)
-                        continue
+                        all_pass = False
+                        break
 
-                    # snapshot the post-close state for deterministic, repeatable kicks
-                    closed_state = self.get_state()
+                results.append(all_pass)
 
-                    # world rotation of the grasp frame
-                    Rg = pose_processed.to_mat()[:3, :3].astype(float)
-
-                    # local unit axes in grasp frame
-                    local_dirs = np.eye(3, dtype=float)
-                    dirs_world = np.concatenate(
-                        [
-                            Rg @ local_dirs[:, [0, 1, 2]],  # +x,+y,+z
-                            -(Rg @ local_dirs[:, [0, 1, 2]]),
-                        ],
-                        axis=1,
-                    ).T  # -x,-y,-z
-                    # dirs_world: shape (6, 3)
-
-                    all_pass = True
-                    for d in dirs_world:
-                        # restore saved state
-                        self.set_state(closed_state)
-                        mujoco.mj_forward(self.model, self.data)
-
-                        # one-step "impulse": apply 25 N along d at COM, step once, then clear
-                        F = IMPULSE_FORCE_N * d
-                        for i in range(5):
-                            self.data.xfrc_applied[object_bid, :3] += F
-                            mujoco.mj_step(
-                                self.model, self.data, nstep=1
-                            )  # integrates one step
-                            self.data.xfrc_applied[object_bid, :] = (
-                                0.0  # clear so it doesn't persist
-                            )
-                            viewer.sync()
-                            mujoco.mj_step(
-                                self.model, self.data, nstep=10
-                            )  # integrates one step
-                            viewer.sync()
-                        mujoco.mj_step(self.model, self.data, nstep=500)
-                        viewer.sync()
-
-                        # check contact right after the kick
-                        if not self.check_contact_with_object():
-                            all_pass = False
-                            break
-
-                    results.append(all_pass)
-
-                results_arr = np.array(results, dtype=bool)
-
+            results_arr = np.array(results, dtype=bool)
             return results_arr
 
         finally:
