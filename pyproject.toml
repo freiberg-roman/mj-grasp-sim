@@ -39,7 +39,8 @@ dev = [
   "black"
 ]
 jax = [
-  "jax[cuda]==0.7.1",
+  "jax==0.7.1",
+  "optax==0.2.3",
   "flax==0.10.7",
 ]
 

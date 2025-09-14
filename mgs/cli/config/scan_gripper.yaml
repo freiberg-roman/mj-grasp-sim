@@ -3,12 +3,14 @@
 
 defaults:
   - _self_
-  - gripper: google
+  - gripper: dexee
 
 qpos: ${gripper.qpos}
 file_id: "open"
 num_images: 10
 debug: false
+save_raw: false
+post_process: true
 
 hydra:
   job:

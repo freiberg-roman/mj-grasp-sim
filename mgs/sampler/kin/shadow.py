@@ -1,14 +1,10 @@
 import math
-import os
-import sys
 
-import jax
 import jax.numpy as jnp
-import numpy as np
-import plotly.graph_objects as go
 from flax import nnx  # Assuming nnx is used
 
 from mgs.sampler.kin.base import KinematicsModel
+from mgs.sampler.kin.seg_op import kinematic_frames
 
 
 class ShadowKinematicsModel(nnx.Module, KinematicsModel):
@@ -218,15 +214,16 @@ class ShadowKinematicsModel(nnx.Module, KinematicsModel):
         )
 
 
-# --- Assume necessary imports are handled by the user ---
-# Need:
-# - ShadowKinematicsModel class definition from mgs.sampler.shadow_kin
-# - kinematic_pcd_transform function from mgs.sampler.kin.jax_util
-# - forward_kinematic_point_transform function from mgs.sampler.kin.jax_util
-# - DATA_PATH variable pointing to the dex-grasp-net data directory
-# ---
-# --- Configuration ---
 try:
+    import os
+    import sys
+
+    import jax
+    import numpy as np
+    import plotly.graph_objects as go
+
+    from mgs.sampler.kin.seg_op import kinematic_transform, point_transform
+
     _script_dir = os.path.dirname(os.path.abspath(__file__))
     _project_root_mj = os.path.abspath(os.path.join(_script_dir, "../../.."))
     if _project_root_mj not in sys.path:
@@ -334,18 +331,24 @@ def visualize_shadow_initial_contacts_normals():
     )
     # Ensure kin_model is passed correctly (might need graph/state if using nnx.split elsewhere)
     # Assuming kinematic_pcd_transform can take the model instance directly
-    points_vis_transformed_jax = kinematic_pcd_transform(
-        points_vis_jax, initial_pose_jax, segmentations_jax, kin_model
+    # points_vis_transformed_jax = kinematic_pcd_transform(
+    #     points_vis_jax, initial_pose_jax, segmentations_jax, kin_model
+    # )
+    points_vis_transformed_jax = kinematic_transform(
+        point_transform,
+        points_vis_jax,
+        initial_pose_jax,
+        segmentations_jax,
+        *nnx.split(kin_model),
     )
     points_vis_transformed_np = np.array(points_vis_transformed_jax)
     print("  Transformed visualization point cloud.")
 
     # 4. Transform Contact Points and Calculate Normals using YOUR FK function
     print("Transforming contact points and calculating normals using YOUR FK...")
-    local_contacts = kin_model.local_fingertip_contact_positions.value.squeeze(
-        1
-    )  # (5, 3)
-    # (5, 3)
+    local_contacts = kin_model.local_fingertip_contact_positions.value[
+        :, 0, :
+    ]  # (5, 3)
     local_normals = kin_model.fingertip_normals.value
     # Local origin for normal calculation
     local_origin = jnp.zeros((5, 3), dtype=jnp.float32)
@@ -354,43 +357,26 @@ def visualize_shadow_initial_contacts_normals():
     world_contact_points_list = []
     world_normal_vectors_list = []
 
-    # Use vmap for transforming points associated with each fingertip
-    # We need to transform 3 points per fingertip: contact point, origin, point along normal
-    @nnx.jit
-    def get_world_pts_for_link(theta, local_pts, joint_idx, model):
-        # Vmap over the points (contact, origin, point_on_normal) for a single link
-        return jax.vmap(
-            forward_kinematic_point_transform, in_axes=(None, 0, None, None)
-        )(theta, local_pts, joint_idx, model)
-
     for i in range(len(fingertip_joint_indices)):
-        joint_idx = fingertip_joint_indices[i]
+        joint_idx = fingertip_joint_indices[i][None]
         local_point_contact = local_contacts[i]
-        local_point_origin = local_origin[i]
-        # Point along local normal from origin
-        local_point_on_normal = local_origin[i] + local_normals[i]
-
-        # Pack the three local points for this link
-        local_pts_for_link = jnp.stack(
-            [local_point_contact, local_point_origin, local_point_on_normal], axis=0
-        )  # Shape (3, 3)
 
         # Transform these three points to world frame
-        world_pts = get_world_pts_for_link(
-            initial_pose_jax, local_pts_for_link, joint_idx, kin_model
+        frame_rot, frame_pos = kinematic_frames(initial_pose_jax, *nnx.split(kin_model))
+        world_contact = (
+            frame_rot[joint_idx] @ local_point_contact + frame_pos[joint_idx]
         )
-        world_contact = world_pts[0]
-        world_origin = world_pts[1]
-        world_point_on_normal = world_pts[2]
-
-        # Calculate world normal vector
-        world_normal = world_point_on_normal - world_origin
+        world_normal = frame_rot[joint_idx] @ local_normals[i]
 
         world_contact_points_list.append(np.array(world_contact))
         world_normal_vectors_list.append(np.array(world_normal))
 
-    contact_points_np = np.array(world_contact_points_list)  # Shape (5, 3)
-    contact_normals_np = np.array(world_normal_vectors_list)  # Shape (5, 3)
+    contact_points_np = np.concatenate(
+        world_contact_points_list, axis=0
+    )  # Shape (5, 3)
+    contact_normals_np = np.concatenate(
+        world_normal_vectors_list, axis=0
+    )  # Shape (5, 3)
     # Normalize the calculated world normals
     contact_normals_np = normalize_vector(contact_normals_np)
     print(

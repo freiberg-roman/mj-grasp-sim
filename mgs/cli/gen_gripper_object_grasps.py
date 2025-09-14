@@ -12,6 +12,7 @@ from mgs.obj.selector import get_object
 from mgs.sampler.antipodal import AntipodalGraspGenerator
 from mgs.sampler.contact import ContactBasedDiff
 from mgs.sampler.kin.allegro import AllegroKinematicsModel
+from mgs.sampler.kin.dexee import DexeeKinematicsModel
 from mgs.sampler.kin.shadow import ShadowKinematicsModel
 from mgs.util.const import ASSET_PATH
 from mgs.util.file import generate_unique_hash  # uses secrets.token_hex under the hood
@@ -310,6 +311,7 @@ def main(cfg: DictConfig):
                 all_kins = {
                     "ShadowHand": ShadowKinematicsModel(),
                     "AllegroGripper": AllegroKinematicsModel(),
+                    "DexeeGripper": DexeeKinematicsModel(),
                 }
                 kin_model = all_kins[cfg.gripper.name]
                 poses_mat, aux_info = sampler.generate_grasps(  # type: ignore

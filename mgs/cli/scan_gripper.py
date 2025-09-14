@@ -24,6 +24,7 @@ from mgs.env.gripper_scan import GripperScanEnv
 from mgs.gripper.base import MjScannableGripper
 from mgs.gripper.selector import get_gripper
 from mgs.util.file import generate_unique_hash
+from mgs.util.img_proc import rgbd_to_pcd
 
 
 def scan(cfg: DictConfig):
@@ -37,7 +38,7 @@ def scan(cfg: DictConfig):
         env.set_state(state)
     else:
         gripper_idxs = env.get_joint_idxs(gripper.get_actuator_joint_names())
-        env.set_qpos(np.array(cfg.qpos), gripper_idxs)  # type: ignore
+        env.set_qpos(np.zeros_like(np.array(cfg.qpos)), gripper_idxs)  # type: ignore
 
     images, extrinsics, image_masks, segmentation = env.scan(num_images=cfg.num_images)
     intrinsics = env.get_camera_intrinsics()
@@ -69,16 +70,40 @@ def main(cfg: DictConfig):
 
     file_hash = generate_unique_hash()
     file_path = os.path.join(output_dir, f"{cfg.file_id}_{file_hash}")  # type: ignore
-    np.savez(
-        file_path,
-        **{
-            "scans": images,
-            "scan_extrinsics": extrinsics,
-            "scan_intrinsics": intrinsics,
-            "scan_masks": image_masks,
-            "segments": segments if segments else np.array([]),
-        },
-    )
+    scan_dict = {
+        "scans": images,
+        "scan_extrinsics": extrinsics,
+        "scan_intrinsics": intrinsics,
+        "scan_masks": image_masks,
+        "segments": segments if segments else np.array([]),
+    }
+    if cfg.save_raw:
+        np.savez(
+            file_path,
+            **scan_dict,
+        )
+    if cfg.post_process:
+        rgbd = scan_dict["scans"]
+        extrinsics = scan_dict["scan_extrinsics"]
+        intrinsics = scan_dict["scan_intrinsics"]
+        scans_masks = scan_dict["scan_masks"]
+        segments = scan_dict["segments"]
+        point, color = rgbd_to_pcd(rgbd, intrinsics, extrinsics)
+        pcd_segments = {}
+
+        for seg in segments.keys():
+            mask = segments[seg][scans_masks]
+            pcd_segments[seg] = mask
+
+        # repackage npz dict
+        output_file_path = os.path.join(file_path + "_seg_pcd")
+        pcd_segments = {
+            **pcd_segments,
+            "pcd_point": point[scans_masks],
+            "pcd_color": color[scans_masks],
+        }
+
+        np.savez(output_file_path, **pcd_segments)
 
 
 if __name__ == "__main__":
