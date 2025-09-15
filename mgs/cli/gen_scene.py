@@ -106,7 +106,7 @@ def get_grasps(gripper_name, obj_id):
     idx = np.random.permutation(len(poses))
     poses = poses[idx][:50000]
     joints = joints[idx][:50000]
-    order = fps_rank_grasps(poses, rot_weight=0.1, k=5000)
+    order = fps_rank_grasps(poses, rot_weight=0.1, k=10000)
     poses, joints = poses[order], joints[order]
 
     return poses, joints
