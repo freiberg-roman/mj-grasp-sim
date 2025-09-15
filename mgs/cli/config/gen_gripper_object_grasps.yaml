@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - gripper: vx300_static
+  - gripper: allegro_static
 
 max_rounds: 100
 

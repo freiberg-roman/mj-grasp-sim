@@ -63,7 +63,7 @@ XML = """
       </default>
 
       <default class="collision">
-        <geom group="3" type="box" mass="0" friction="3.0"/>
+        <geom group="3" type="box" mass="0" friction="2.0"/>
         <default class="palm_collision">
           <geom size="0.0204 0.0565 0.0475" pos="-0.0093 0 -0.0475"/>
         </default>
