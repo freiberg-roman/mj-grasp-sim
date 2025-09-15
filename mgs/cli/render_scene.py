@@ -1,16 +1,16 @@
 import os
-import jax.numpy as jnp
 from copy import deepcopy
 
 import hydra
+import jax.numpy as jnp
 import numpy as np
 from omegaconf import DictConfig
 
 from mgs.env.selector import get_env_from_dict
 from mgs.gripper.base import MjScannableGripper
 from mgs.gripper.selector import get_gripper
+from mgs.sampler.helper import farthest_point_sampling
 from mgs.util.img_proc import rgbd_to_pcd, voxel_downsample_pcd
-from mgs.sampler.kin.jax_util import farthest_point_sampling
 
 
 def scan(cfg: DictConfig, scene_def):
@@ -22,7 +22,7 @@ def scan(cfg: DictConfig, scene_def):
     return images, extrinsics, intrinsics, image_masks
 
 
-@hydra.main(config_path="config", config_name="render_scene_proc")
+@hydra.main(config_path="config", config_name="render_scene")
 def main(cfg: DictConfig):
     output_dir = os.getenv("MGS_OUTPUT_DIR")
     input_dir = os.getenv("MGS_INPUT_DIR")
@@ -47,8 +47,8 @@ def main(cfg: DictConfig):
     feature = feature[image_masks]
 
     region_mask = np.all(
-        (pcd < np.array([[0.25, 0.25, 1.0]]))
-        & (pcd > np.array([[-0.25, -0.25, -0.01]])),
+        (pcd < np.array([[0.225, 0.225, 1.0]]))
+        & (pcd > np.array([[-0.225, -0.225, -0.01]])),
         axis=-1,
     )
     pcd = pcd[region_mask]
