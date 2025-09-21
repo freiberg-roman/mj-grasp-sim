@@ -180,6 +180,7 @@ def filter_grasps(cfg: DictConfig, scene_def):
     collision_free_mask = env.grasp_collision_mask(
         SE3Pose.from_mat(deepcopy(all_poses), type="wxyz"),
         deepcopy(all_joints),
+        with_padding=0.002,
     )
 
     if sum(collision_free_mask) <= 0:
@@ -206,14 +207,21 @@ def filter_grasps(cfg: DictConfig, scene_def):
         collision_free_joints = collision_free_joints[order]
         collision_free_obj_indices = collision_free_obj_indices[order]
 
+        if sum(collision_free_mask) < cfg.min_stable:
+            raise ValueError(
+                f"Not enough collision free grasps! Only: {sum(collision_free_mask)}"
+            )
+
         stable_grasp_mask = env.grasp_stable_mask(
             SE3Pose.from_mat(deepcopy(collision_free_poses), type="wxyz"),
             deepcopy(collision_free_joints),
             deepcopy(scene_def["env_state"]["state"]),
             enough_stable=cfg.enough_stable,
         )
-        if sum(stable_grasp_mask) <= cfg.min_stable:
-            raise ValueError("Not enough stable grasps!")
+        if sum(stable_grasp_mask) < cfg.min_stable:
+            raise ValueError(
+                f"Not enough stable grasps! Only: {sum(stable_grasp_mask)}"
+            )
 
         result_poses = collision_free_poses[stable_grasp_mask]
         result_joints = collision_free_joints[stable_grasp_mask]
