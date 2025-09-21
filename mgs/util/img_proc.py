@@ -61,3 +61,73 @@ def rgbd_to_pcd(rgbd, intrinsics, extrinsics) -> Tuple[np.ndarray, np.ndarray]:
     points = points_homo[..., :3]
     color = rgbd[..., :-1]
     return (points, color)
+
+
+def detect_outlier(
+    points: np.ndarray, radius: float, min_neighbors: int = 8
+) -> np.ndarray:
+    """
+    Radius-based outlier removal using a uniform grid spatial hash (NumPy only).
+
+    Args:
+        points: (N, 3) float array of 3D points.
+        radius: neighborhood radius (same units as points).
+        min_neighbors: keep a point if it has at least this many neighbors
+                       within 'radius' (excluding itself).
+
+    Returns:
+        mask: (N,) boolean array; True = inlier, False = outlier.
+    """
+    if points.ndim != 2 or points.shape[1] != 3:
+        raise ValueError("points must be an (N, 3) array")
+    n = points.shape[0]
+    if n == 0:
+        return np.zeros(0, dtype=bool)
+
+    r2 = float(radius) * float(radius)
+    inv = 1.0 / float(radius)
+
+    # Hash each point to a grid cell
+    grid_idx = np.floor(points * inv).astype(np.int32)
+    cell_keys = [tuple(ix) for ix in grid_idx]
+
+    # Build cell -> list of point indices
+    cells: dict[tuple, list] = {}
+    for i, key in enumerate(cell_keys):
+        cells.setdefault(key, []).append(i)
+
+    # Offsets for the 27 neighboring cells (including the cell itself)
+    offsets = np.array(
+        [[dx, dy, dz] for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)],
+        dtype=np.int32,
+    )
+
+    mask = np.zeros(n, dtype=bool)
+    pts = points  # alias for speed
+
+    for i, key in enumerate(cell_keys):
+        base = np.fromiter(key, dtype=np.int32, count=3)
+        count = 0
+
+        # Scan neighboring cells; break early once threshold is met
+        for off in offsets:
+            k = tuple((base + off).tolist())
+            idxs = cells.get(k)
+            if not idxs:
+                continue
+
+            cand = pts[idxs]
+            # squared distances to candidates
+            d2 = np.sum((cand - pts[i]) * (cand - pts[i]), axis=1)
+            # within radius
+            count += np.count_nonzero(d2 <= r2)
+            if count - 1 >= min_neighbors:  # minus self, counted once
+                mask[i] = True
+                break
+
+        if not mask[i]:
+            # finalize with self excluded (self is always in its own cell)
+            if count - 1 >= min_neighbors:
+                mask[i] = True
+
+    return mask

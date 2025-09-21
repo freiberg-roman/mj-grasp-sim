@@ -10,7 +10,7 @@ from mgs.env.selector import get_env_from_dict
 from mgs.gripper.base import MjScannableGripper
 from mgs.gripper.selector import get_gripper
 from mgs.sampler.helper import farthest_point_sampling
-from mgs.util.img_proc import rgbd_to_pcd, voxel_downsample_pcd
+from mgs.util.img_proc import detect_outlier, rgbd_to_pcd, voxel_downsample_pcd
 
 
 def scan(cfg: DictConfig, scene_def):
@@ -55,6 +55,8 @@ def main(cfg: DictConfig):
     feature = feature[region_mask]
 
     pcd, feature = voxel_downsample_pcd(pcd, feature, voxel_size=0.002)
+    mask = detect_outlier(pcd, radius=0.008, min_neighbors=2)
+    pcd, feature = pcd[mask], feature[mask]
     idx = farthest_point_sampling(
         jnp.asarray(pcd, dtype=jnp.float32), num_samples=15000
     )

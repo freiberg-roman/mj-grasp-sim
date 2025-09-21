@@ -118,8 +118,13 @@ class MjScanEnv(MjSimulation):
         # masks
         zero_one_img = (~(segmentation == -1)).astype(np.uint8)
         kernel = np.ones((3, 3), np.uint8)
-        erode_selection = cv2.erode(zero_one_img, kernel, iterations=5)
-        image_masks = erode_selection.astype(bool)
+        image_masks = np.stack(
+            [
+                cv2.erode(zero_one_img[k], kernel, iterations=5)
+                for k in range(zero_one_img.shape[0])
+            ],
+            axis=0,
+        ).astype(bool)
 
         rgbd[..., :-1] = rgbd[..., :-1] / 255.0
 

@@ -223,7 +223,7 @@ class ClutterTableEnv(MjScanEnv, Loadable):
             mujoco.mj_step(self.model, self.data)  # type: ignore
 
     def update_camera_settings(self, num_images, i):
-        rnd_pos = fibonacci_sphere(total_num=num_images, i=i)
+        rnd_pos = fibonacci_sphere(total_num=num_images, i=i) * 0.75
         rnd_pos[2] = np.abs(rnd_pos[2]) + 0.01  # upper hemisphere
         jnt_adr_start = self.model.jnt("camera:joint").qposadr[0].item()
         self.data.qpos[jnt_adr_start : jnt_adr_start + 3] = rnd_pos
