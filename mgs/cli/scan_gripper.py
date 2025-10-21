@@ -24,7 +24,7 @@ from mgs.env.gripper_scan import GripperScanEnv
 from mgs.gripper.base import MjScannableGripper
 from mgs.gripper.selector import get_gripper
 from mgs.util.file import generate_unique_hash
-from mgs.util.img_proc import rgbd_to_pcd
+from mgs.util.img_proc import detect_outlier, rgbd_to_pcd
 
 
 def scan(cfg: DictConfig):
@@ -92,15 +92,23 @@ def main(cfg: DictConfig):
         pcd_segments = {}
 
         for seg in segments.keys():
-            mask = segments[seg][scans_masks]
-            pcd_segments[seg] = mask
+            pcd_segments[seg] = segments[seg][scans_masks]
+
+        # outlier detection
+        pcd_point = point[scans_masks]
+        pcd_color = color[scans_masks]
+        outlier_mask = detect_outlier(pcd_point, radius=0.01, min_neighbors=5)
+        pcd_point = pcd_point[outlier_mask]
+        pcd_color = pcd_color[outlier_mask]
+        for seg in segments.keys():
+            pcd_segments[seg] = pcd_segments[seg][outlier_mask]
 
         # repackage npz dict
         output_file_path = os.path.join(file_path + "_seg_pcd")
         pcd_segments = {
             **pcd_segments,
-            "pcd_point": point[scans_masks],
-            "pcd_color": color[scans_masks],
+            "pcd_point": pcd_point,
+            "pcd_color": pcd_color,
         }
 
         np.savez(output_file_path, **pcd_segments)
