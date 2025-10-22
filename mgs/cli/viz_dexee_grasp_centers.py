@@ -1,8 +1,6 @@
-import argparse
 import os
 from typing import Tuple
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 import plotly.graph_objects as go
@@ -10,41 +8,38 @@ from flax import nnx
 
 from mgs.sampler.helper import farthest_point_sampling
 from mgs.sampler.kin.base import KinematicsModel
+from mgs.sampler.kin.dexee import DexeeKinematicsModel
 from mgs.sampler.kin.op import forward_kinematic_point_transform
 from mgs.sampler.kin.seg_op import kinematic_transform, point_transform
-from mgs.sampler.kin.shadow import ShadowKinematicsModel
 
+# Ordered segmentation keys expected in the Dexee gripper npz file
 SEGMENTATION_KEYS_ORDERED = [
-    "ff_j4",
-    "ff_j3",
-    "ff_j2",
-    "ff_j1",
-    "mf_j4",
-    "mf_j3",
-    "mf_j2",
-    "mf_j1",
-    "rf_j4",
-    "rf_j3",
-    "rf_j2",
-    "rf_j1",
-    "lf_j5",
-    "lf_j4",
-    "lf_j3",
-    "lf_j2",
-    "lf_j1",
-    "th_j5",
-    "th_j4",
-    "th_j3",
-    "th_j2",
-    "th_j1",
+    "f0j0",
+    "f0j1",
+    "f0j2",
+    "f0j3",
+    "f1j0",
+    "f1j1",
+    "f1j2",
+    "f1j3",
+    "f2j0",
+    "f2j1",
+    "f2j2",
+    "f2j3",
 ]
 
 
 def compute_fingertip_positions(
     poses: jnp.ndarray, joints: jnp.ndarray, kinematics
 ) -> jnp.ndarray:
-    """Return fingertip world positions (using joint origins) for each grasp.
-    Shape: (B,K,3)
+    """Return fingertip world positions (using distal joint origins) for each grasp.
+
+    Args:
+        poses: (B,4,4) grasp base poses.
+        joints: (B,J) joint angles.
+        kinematics: Kinematics model instance.
+    Returns:
+        Fingertip world positions (B,K,3)
     """
     g, s = nnx.split(kinematics)
     num_fingertips = kinematics.fingertip_idx.value.shape[0]
@@ -64,10 +59,14 @@ def compute_fingertip_positions(
 
 
 def compute_grasp_centers(
-    poses: jnp.ndarray, joints: jnp.ndarray, kinematics: KinematicsModel
+    poses: jnp.ndarray, joints: jnp.ndarray, kinematics
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Compute centers, in-bound mask, and fingertip positions.
-    Returns: centers (B,3), in_bound (B,), fingertip_world (B,K,3)
+
+    Returns:
+        centers: (B,3)
+        in_bound: (B,) boolean mask for centers lying inside fixed XY square.
+        fingertip_world: (B,K,3)
     """
     fingertip_world = compute_fingertip_positions(poses, joints, kinematics)
     centers = jnp.mean(fingertip_world, axis=1)
@@ -81,6 +80,7 @@ def compute_grasp_centers(
 
 
 def gather_scene_grasps(scene_dir: str) -> Tuple[np.ndarray, np.ndarray]:
+    """Load all grasp pose/joint arrays in a scene directory (excluding scene & collision files)."""
     assert os.path.isdir(scene_dir), f"Scene dir not found: {scene_dir}"
     pose_list = []
     joint_list = []
@@ -105,6 +105,7 @@ def gather_scene_grasps(scene_dir: str) -> Tuple[np.ndarray, np.ndarray]:
 
 
 def maybe_load_scene_pcd(scene_dir: str):
+    """Optionally load scene point cloud (points, colors) if present."""
     pcd_path = os.path.join(scene_dir, "scene_pcd.npz")
     if not os.path.exists(pcd_path):
         return None, None
@@ -114,9 +115,10 @@ def maybe_load_scene_pcd(scene_dir: str):
     return points, colors
 
 
-def load_shadow_gripper_pcd(path: str):
+def load_dexee_gripper_pcd(path: str):
+    """Load Dexee gripper point cloud and segmentation masks from npz file."""
     if not os.path.exists(path):
-        print(f"Warning: shadow gripper npz not found: {path}")
+        print(f"Warning: dexee gripper npz not found: {path}")
         return None, None
     raw = np.load(path, allow_pickle=True)
     pcd = raw.get("pcd_point")
@@ -135,22 +137,17 @@ def load_shadow_gripper_pcd(path: str):
 
 
 def transform_gripper_cloud(
-    pcd,
-    segmentation,
-    pose: np.ndarray,
-    joints: np.ndarray,
-    kin: ShadowKinematicsModel,
+    pcd, segmentation, pose: np.ndarray, joints: np.ndarray, kin: DexeeKinematicsModel
 ):
+    """Transform gripper point cloud (with segmentation) to world frame for a single grasp."""
     if pcd is None or segmentation is None:
         return None
     g, s = nnx.split(kin)
     pcd_j = jnp.asarray(pcd, dtype=jnp.float32)
     seg_j = jnp.asarray(segmentation, dtype=jnp.bool_)
     joints_j = jnp.asarray(joints, dtype=jnp.float32)
-    transformed = kinematic_transform(
-        point_transform, pcd_j, joints_j, seg_j, g, s
-    )  # local gripper frame
-    world = jnp.einsum("ij,nj->ni", pose[:3, :3], transformed) + pose[:3, 3]  # (N,3)
+    transformed = kinematic_transform(point_transform, pcd_j, joints_j, seg_j, g, s)
+    world = jnp.einsum("ij,nj->ni", pose[:3, :3], transformed) + pose[:3, 3]
     return np.asarray(world)
 
 
@@ -172,10 +169,11 @@ def visualize(
     max_gripper_points: int | None,
     max_centers: int | None,
 ):
+    """Main visualization entry: loads grasps + optional scene PCD; displays centers & two example gripper clouds."""
     poses_np, joints_np = gather_scene_grasps(scene_dir)
     print(f"Loaded grasps: poses {poses_np.shape}, joints {joints_np.shape}")
 
-    kin = ShadowKinematicsModel()
+    kin = DexeeKinematicsModel()
 
     centers, in_bound, fingertip_world = compute_grasp_centers(
         jnp.asarray(poses_np, dtype=jnp.float32),
@@ -207,7 +205,7 @@ def visualize(
     green_idx = int(green_indices[0]) if len(green_indices) > 0 else 0
     red_idx = int(red_indices[0]) if len(red_indices) > 0 else green_idx
 
-    gripper_pcd, gripper_seg = load_shadow_gripper_pcd(gripper_pcd_path)
+    gripper_pcd, gripper_seg = load_dexee_gripper_pcd(gripper_pcd_path)
 
     # Downsample gripper point cloud + segmentation before transforming
     if gripper_pcd is not None and gripper_seg is not None:
@@ -236,7 +234,6 @@ def visualize(
         if idx_scene is not None:
             scene_points = scene_points[idx_scene]
             if scene_colors is not None and scene_colors.shape[0] == idx_scene.shape[0]:
-                # colors already subset? improbable; else try to index if lengths match
                 pass
             elif scene_colors is not None:
                 scene_colors = scene_colors[idx_scene]
@@ -318,7 +315,7 @@ def visualize(
             )
         )
 
-    # Bounding square
+    # Bounding square at minimum Z of centers
     z_plane = float(np.min(centers_np[:, 2])) if centers_np.size > 0 else 0.0
     square = np.array(
         [
@@ -341,7 +338,7 @@ def visualize(
     )
 
     fig.update_layout(
-        title=f"Shadow Grasp Centers + Samples\n{scene_dir}",
+        title=f"Dexee Grasp Centers + Samples\n{scene_dir}",
         scene=dict(
             xaxis_title="X", yaxis_title="Y", zaxis_title="Z", aspectmode="data"
         ),
@@ -352,10 +349,10 @@ def visualize(
 
 
 def main():
-
+    # Example usage: update paths as needed before running.
     visualize(
-        "/home/frr2rng/projects/kinematics-flow/data/train/ShadowHand/002d68a2594cfc7f44f046b3089f7ac3/",
-        "/home/frr2rng/projects/kinematics-flow/data/gripper_shadow.npz",
+        "/home/frr2rng/projects/kinematics-flow/data/train/DexeeGripper/00922ca107f017a40e12f4636657c2cf",
+        "/home/frr2rng/projects/kinematics-flow/data/gripper_dexee.npz",
         2000,
         1000,
         500,
