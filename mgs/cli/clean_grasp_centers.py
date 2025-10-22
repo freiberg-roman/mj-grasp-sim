@@ -1,7 +1,7 @@
 import os
 import tempfile
 from dataclasses import dataclass
-from typing import Iterable, List, Dict, Any
+from typing import Any, Dict, Iterable, List
 
 import jax.numpy as jnp
 import numpy as np
@@ -193,43 +193,6 @@ def clean_dataset(
     for scene_dir in pbar:
         # Scene-level exclusion: buffer region (0.20, 0.225] on either |x| or |y| for any object center.
         exclude_scene = False
-        scene_file = os.path.join(scene_dir, "scene.npz")
-        try:
-            if os.path.exists(scene_file):
-                scene_data = np.load(scene_file, allow_pickle=True)
-                scene_def = scene_data["scene_definition"].item()
-                from copy import deepcopy
-
-                from mgs.env.selector import get_env_from_dict
-
-                env = get_env_from_dict(
-                    scene_def.get("env", scene_def), deepcopy(scene_def)
-                )
-                import mujoco
-
-                mujoco.mj_forward(env.model, env.data)  # type: ignore
-                for obj_name in getattr(env, "object_names", []):
-                    jnt = env.model.jnt(f"{obj_name}:joint")
-                    jnt_adr_start = jnt.qposadr[0].item()
-                    obj_position = np.copy(
-                        env.data.qpos[jnt_adr_start : jnt_adr_start + 3]
-                    )
-                    x, y = float(obj_position[0]), float(obj_position[1])
-                    if (0.20 < abs(x) <= 0.225) or (0.20 < abs(y) <= 0.225):
-                        exclude_scene = True
-                        break
-            if exclude_scene and not dry_run:
-                # Destructive: remove entire scene directory (only .npz files)
-                for fname_del in os.listdir(scene_dir):
-                    if fname_del.endswith(".npz"):
-                        try:
-                            os.remove(os.path.join(scene_dir, fname_del))
-                        except OSError:
-                            pass
-        except Exception:
-            # On failure to parse or env reconstruction, fall back to grasp filtering only.
-            pass
-
         file_stats: List[FileStats] = []
         # Only compute object file stats if not buffer excluded (real run) or if dry_run (for reporting)
         if (not exclude_scene) or dry_run:

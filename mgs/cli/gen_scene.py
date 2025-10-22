@@ -11,6 +11,75 @@ from mgs.obj.selector import get_objects
 from mgs.util.file import generate_unique_hash
 from mgs.util.geo.transforms import SE3Pose
 
+# In-bound XY limits (replicated from cleaning logic)
+_XY_MIN = -0.20
+_XY_MAX = 0.20
+
+# Optional JAX-based fingertip center computation for in-bound filtering
+import jax.numpy as jnp  # type: ignore
+from flax import nnx  # type: ignore
+
+from mgs.sampler.kin.allegro import AllegroKinematicsModel  # type: ignore
+from mgs.sampler.kin.dexee import DexeeKinematicsModel  # type: ignore
+from mgs.sampler.kin.op import forward_kinematic_point_transform  # type: ignore
+from mgs.sampler.kin.shadow import ShadowKinematicsModel  # type: ignore
+
+_GRIPPERS_WITH_INBOUND = {"AllegroGripper", "DexeeGripper", "ShadowHand"}
+
+
+def _get_kinematics(gripper_name: str):
+    if gripper_name == "AllegroGripper":
+        return AllegroKinematicsModel()
+    if gripper_name == "DexeeGripper":
+        return DexeeKinematicsModel()
+    if gripper_name == "ShadowHand":
+        return ShadowKinematicsModel()
+    return None  # Others skip in-bound filtering
+
+
+def _compute_in_bound_mask(
+    poses: np.ndarray, joints: np.ndarray, gripper_name: str
+) -> np.ndarray:
+    """Return boolean mask of in-bound grasps for select grippers.
+
+    Mirrors logic from `clean_grasp_centers.py` (padding to 1500 grasps) to
+    avoid shape-dependent issues inside vmap. Unsupported grippers -> all True.
+    """
+    if gripper_name not in _GRIPPERS_WITH_INBOUND:
+        return np.ones((poses.shape[0],), dtype=bool)
+    if poses.size == 0:
+        return np.zeros((0,), dtype=bool)
+
+    kin = _get_kinematics(gripper_name)
+    if kin is None:
+        return np.ones((poses.shape[0],), dtype=bool)
+
+    g, s = nnx.split(kin)
+    fingertip_idx = kin.fingertip_idx.value  # (K,)
+    num_fingertips = fingertip_idx.shape[0]
+    local_points = jnp.zeros((num_fingertips, 3), dtype=jnp.float32)
+
+    transformed_local = nnx.vmap(  # over grasps
+        nnx.vmap(  # over fingertip indices
+            forward_kinematic_point_transform,
+            in_axes=(None, 0, 0, None, None),
+        ),
+        in_axes=(0, None, None, None, None),
+    )(jnp.asarray(joints, dtype=jnp.float32), local_points, fingertip_idx, g, s)
+
+    world_pts = (
+        jnp.einsum("bij,bkj->bki", jnp.asarray(poses)[:, :3, :3], transformed_local)
+        + jnp.asarray(poses)[:, :3, 3][:, None, :]
+    )  # (B,K,3)
+    centers = jnp.mean(world_pts, axis=1)  # (B,3)
+    in_bound = (
+        (centers[:, 0] < _XY_MAX)
+        & (centers[:, 0] > _XY_MIN)
+        & (centers[:, 1] < _XY_MAX)
+        & (centers[:, 1] > _XY_MIN)
+    )
+    return in_bound
+
 
 def fps_rank_grasps(
     poses_mat: np.ndarray,
@@ -112,23 +181,38 @@ def get_grasps(gripper_name, obj_id):
     return poses, joints
 
 
-def gen_stable_scene(cfg: DictConfig):
-    obj_list = get_objects(cfg.object)
-    gripper = get_gripper(
-        cfg.gripper,
-        default_pose=SE3Pose(
-            np.array([5.0, 5.0, 1.0]), np.array([1.0, 0.0, 0.0, 0.0]), type="wxyz"
-        ),
+def gen_stable_scene(cfg: DictConfig, max_attempts: int = 5):
+    last_error: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        obj_list = get_objects(cfg.object)
+        gripper = get_gripper(
+            cfg.gripper,
+            default_pose=SE3Pose(
+                np.array([5.0, 5.0, 1.0]), np.array([1.0, 0.0, 0.0, 0.0]), type="wxyz"
+            ),
+        )
+        env = get_env(cfg.env, gripper=deepcopy(gripper), obj_list=deepcopy(obj_list))
+        env.gen_clutter()
+        scene_dict = env.to_dict()
+
+        exclude_scene = False
+        for obj_name in getattr(env, "object_names", []):
+            jnt = env.model.jnt(f"{obj_name}:joint")
+            jnt_adr_start = jnt.qposadr[0].item()
+            obj_position = np.copy(env.data.qpos[jnt_adr_start : jnt_adr_start + 3])
+            x, y = float(obj_position[0]), float(obj_position[1])
+            if ((0.20 < abs(x) <= 0.225) and abs(y) < 0.225) or (
+                (0.20 < abs(y) <= 0.225) and abs(x) < 0.225
+            ):
+                exclude_scene = True
+                break
+
+        if env.is_stable() and not exclude_scene:
+            return scene_dict
+        last_error = ValueError("Scene unstable or excluded")
+    raise (
+        last_error if last_error is not None else ValueError("Scene generation failed")
     )
-
-    env = get_env(cfg.env, gripper=deepcopy(gripper), obj_list=deepcopy(obj_list))
-    env.gen_clutter()
-    scene_dict = env.to_dict()
-
-    if not env.is_stable():
-        raise ValueError("Scene unstable")
-
-    return scene_dict
 
 
 def filter_grasps(cfg: DictConfig, scene_def):
@@ -140,7 +224,8 @@ def filter_grasps(cfg: DictConfig, scene_def):
             gripper_name=cfg.gripper.name,
             obj_id=obj_id,
         )
-
+        if poses is None or joints is None:
+            continue  # skip objects with missing grasp data
         o2w = env.get_obj_pose(obj_name)
         se3_pose = SE3Pose.from_mat(deepcopy(poses))
         grasp_pose = o2w @ se3_pose
@@ -172,10 +257,18 @@ def filter_grasps(cfg: DictConfig, scene_def):
             obj_map.append((obj_name, obj_id))
 
     if len(all_poses) == 0:
-        raise ValueError("No collision free grasps")
+        raise ValueError("No grasps loaded")
     all_poses = np.concatenate(all_poses, axis=0)
     all_joints = np.concatenate(all_joints, axis=0)
     obj_indices = np.concatenate(obj_indices, axis=0)
+
+    # In-bound filtering (before collision check) for select grippers
+    in_bound_mask = _compute_in_bound_mask(all_poses, all_joints, cfg.gripper.name)
+    if in_bound_mask.sum() == 0:
+        raise ValueError("No in-bound grasps")
+    all_poses = all_poses[in_bound_mask]
+    all_joints = all_joints[in_bound_mask]
+    obj_indices = obj_indices[in_bound_mask]
 
     collision_free_mask = env.grasp_collision_mask(
         SE3Pose.from_mat(deepcopy(all_poses), type="wxyz"),
