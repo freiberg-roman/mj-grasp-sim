@@ -3,7 +3,7 @@
 
 defaults:
   - _self_
-  - gripper: allegro
+  - gripper: vx300
 
 hydra:
   job:

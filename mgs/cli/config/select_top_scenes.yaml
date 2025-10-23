@@ -1,0 +1,17 @@
+defaults:
+  - _self_
+  - gripper: shadow
+
+hydra:
+  job:
+    chdir: False
+
+# Number of scenes to select (top-N by valid grasp count per gripper)
+num_scenes: 10
+
+# Optional explicit source root containing the gripper scene subdirectory.
+# If empty string, defaults to MGS_INPUT_DIR env var.
+source_root: ""
+
+# Move (True) vs copy (False). Copy preserves source.
+move: false

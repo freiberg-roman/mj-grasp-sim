@@ -6,7 +6,7 @@
 
 defaults:
   - _self_
-  - gripper: shadow # default; override via +gripper=<allegro|dexee|shadow>
+  - gripper: allegro # default; override via +gripper=<allegro|dexee|shadow>
 
 dry_run: true # set true to only report counts
 min_scene_grasps: 50 # delete scene if remaining grasps < this (ignored if buffer-excluded)
