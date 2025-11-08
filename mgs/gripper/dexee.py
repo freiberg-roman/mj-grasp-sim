@@ -124,6 +124,7 @@ XML = """
     <body name="mocap" mocap="true" pos="{position}" quat="{quaternion}"/>
     <body name="dexee_gripper" pos="{position}" quat="{quaternion}" gravcomp="1">
       <freejoint name="freejoint"/>
+      <inertial mass="0.001" pos="0 0 0" diaginertia="5e-05 5e-05 5e-05"/>
       <site name="tcp" type="sphere" rgba="1 0.5 0 0.2" size="0.001" pos="0 0 0.3"/>
       <site name="attachment_site" type="sphere" group="3" rgba="1 0 0 1" size="0.001"/>
       <body name="hand_base" gravcomp="1">
