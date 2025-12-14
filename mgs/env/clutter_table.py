@@ -48,6 +48,9 @@ XML = r"""
     <option noslip_iterations="3"> </option>
     <option><flag multiccd="enable"/> </option>
     <option cone="elliptic" gravity="0 0 -9.81" impratio="3" timestep="0.001" noslip_iterations="3" noslip_tolerance="1e-10" tolerance="1e-10"/>
+    <asset>
+        <texture type="skybox" builtin="flat" rgb1="1 1 1" rgb2="1 1 1" width="32" height="32"/>
+    </asset>
     {gripper}
     <worldbody>
         {lights}
@@ -105,7 +108,7 @@ class ClutterTableEnv(MjScanEnv, Loadable):
                 " ".join([str(np.random.uniform(0, 1)) for _ in range(3)]) + " 1.0"
             )
         else:
-            random_color = "0.5 0.5 0.5 1.0"
+            random_color = "1.0 1.0 1.0 0.0"
 
         rand_x, rand_y = np.random.uniform(-0.5, 0.5), np.random.uniform(-0.5, 0.5)
         light_one = f"""<light name="light:one" pos="{rand_x} {rand_y} 2.0" attenuation="1.0 0.2 0.2" mode="targetbody" target="base_origin"/>"""
@@ -510,7 +513,7 @@ class ClutterTableEnv(MjScanEnv, Loadable):
 
         env.model.geom_conaffinity[:] = state["geom_conaffinity"]
         env.model.geom_contype[:] = state["geom_contype"]
-        env.model.geom_rgba[:] = state["geom_rgba"]
+        # env.model.geom_rgba[:] = state["geom_rgba"]
         env.model.body_gravcomp[:] = state["body_gravcomp"]
 
         return env

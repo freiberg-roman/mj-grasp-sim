@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - gripper: allegro_static
+  - gripper: shadow
 
 max_rounds: 100
 
@@ -8,7 +8,7 @@ max_rounds: 100
 target_grasps: 2000
 
 # collect grasps on sampling
-sample_grasps: 1000
+sample_grasps: 2000
 
 # num grasps to collect from sampling + collision filtering till stability eval.
 collect_grasps_till_eval: 100

@@ -34,7 +34,7 @@ XML = """
   <default>
     <default class="allegro_right">
       <joint axis="0 1 0" damping=".1"/>
-      <position kp="1"/>
+      <position kp="1.5"/>
       <geom density="800"/>
 
       <default class="visual">
@@ -155,7 +155,6 @@ XML = """
     <body name="mocap" mocap="true" pos="{position}" quat="{quaternion}"/>
     <body name="palm" pos="{position}" quat="{quaternion}" childclass="allegro_right">
       <freejoint name="freejoint" />
-      <!-- <inertial mass="0.4154" pos="0 0 0.0475" diaginertia="1e-4 1e-4 1e-4"/> -->
       <geom class="palm_visual" mesh="base_link"/>
       <geom class="palm_collision"/>
       <!-- First finger -->

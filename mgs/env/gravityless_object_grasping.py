@@ -1,3 +1,4 @@
+import time
 from typing import List, Tuple
 
 import mujoco
@@ -19,6 +20,9 @@ XML = r"""
     <option cone="elliptic" impratio="3" timestep="0.001" noslip_iterations="2" noslip_tolerance="1e-8" tolerance="1e-8"/>
     <option gravity="0 0 0" />
     {gripper}
+    <asset>
+        <texture type="skybox" builtin="flat" rgb1="1 1 1" rgb2="1 1 1" width="32" height="32"/>
+    </asset>
     <worldbody>
         <light name="light:top" pos="0 0 0.3"/>
         <light name="light:right" pos="0.3 0 0"/>
@@ -48,6 +52,51 @@ class GravitylessObjectGrasping(MjSimulation):
         self.data = mujoco.MjData(self.model)  # type: ignore
         mujoco.mj_forward(self.model, self.data)  # type: ignore
 
+    def get_mujoco_ground_truth(self, base_pose: SE3Pose, joint_values: np.ndarray):
+        # 1. Reset
+        mujoco.mj_resetData(self.model, self.data)
+
+        # 2. Set Base Pose (FreeJoint)
+        free_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "freejoint")
+        free_qpos_adr = self.model.jnt_qposadr[free_id]
+
+        self.data.qpos[free_qpos_adr : free_qpos_adr + 3] = base_pose.pos
+        self.data.qpos[free_qpos_adr + 3 : free_qpos_adr + 7] = base_pose.quat
+
+        # 3. Set Joint Positions
+        joint_names = self.gripper.get_actuator_joint_names()
+        for i, name in enumerate(joint_names):
+            j_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
+            q_adr = self.model.jnt_qposadr[j_id]
+            self.data.qpos[q_adr] = joint_values[i]
+
+        # 4. Compute Kinematics
+        mujoco.mj_kinematics(self.model, self.data)
+
+        # 5. Extract Universal Transforms
+        # Uses the formula: Global_J = Global_B + Rot_B * Local_J
+        positions = []
+        rotations = []
+
+        for name in joint_names:
+            j_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
+            body_id = self.model.jnt_bodyid[j_id]
+
+            # Body Pose
+            b_pos = self.data.xpos[body_id]
+            b_rot = self.data.xmat[body_id].reshape(3, 3)
+
+            # Joint Offset
+            j_offset = self.model.jnt_pos[j_id]
+
+            # Calculate
+            j_pos_global = b_pos + b_rot @ j_offset
+
+            positions.append(j_pos_global)
+            rotations.append(b_rot)
+
+        return np.array(rotations), np.array(positions)
+
     def idle_grasp(self, pose: SE3Pose, joints: np.ndarray):
         import mujoco.viewer
 
@@ -65,7 +114,16 @@ class GravitylessObjectGrasping(MjSimulation):
         with mujoco.viewer.launch_passive(self.model, self.data) as viewer:
             while True:
                 viewer.sync()
-                mujoco.mj_step(self.model, self.data)
+                # mujoco.mj_step(self.model, self.data)
+                # viewer.cam.lookat[:] = pose_processed.pos
+                # viewer.cam.distance = 0.5  # Set zoom distance (adjust as needed)
+                # viewer.cam.elevation = -30  # Set elevation angle
+
+                # while viewer.is_running():
+                #     # Slowly rotate the camera around the lookat point
+                #     viewer.cam.azimuth += 0.5
+                #     viewer.sync()
+                #     time.sleep(1.0 / 60.0)  # Cap at ~60 FPS
 
     def grasp_collision_mask(
         self,
@@ -138,6 +196,21 @@ class GravitylessObjectGrasping(MjSimulation):
             self.set_state(initial_state)
         return np.array(collision_free_mask)
 
+    def _get_arrow_matrix(self, direction: np.ndarray) -> np.ndarray:
+        """Returns flattened 3x3 rotation matrix to align Z-axis with direction."""
+        z = direction / np.linalg.norm(direction)
+        # Find a vector perpendicular to z
+        if abs(z[2]) < 0.9:
+            a = np.array([0.0, 0.0, 1.0])
+        else:
+            a = np.array([1.0, 0.0, 0.0])
+
+        x = np.cross(a, z)
+        x /= np.linalg.norm(x)
+        y = np.cross(z, x)
+        # Create rotation matrix [x, y, z] and flatten for MuJoCo
+        return np.column_stack([x, y, z]).flatten()
+
     def grasp_stability_evaluation_from_joints(
         self,
         poses: SE3Pose,
@@ -193,7 +266,6 @@ class GravitylessObjectGrasping(MjSimulation):
                 self.set_qpos(joints[i], gripper_joint_idxs)
                 self.gripper.set_pose(self, pose_processed)
                 mujoco.mj_forward(self.model, self.data)
-
                 self.gripper.close_gripper_at(self, pose_processed)
 
                 if not self.check_contact_with_object():
@@ -222,6 +294,22 @@ class GravitylessObjectGrasping(MjSimulation):
                     # restore saved state
                     self.set_state(closed_state)
                     mujoco.mj_forward(self.model, self.data)
+                    # FOR VIZ
+                    # arrow_mat = self._get_arrow_matrix(d)
+                    # obj_pos = self.data.xpos[object_bid]
+                    # mujoco.mjv_initGeom(
+                    #     viewer.user_scn.geoms[0],
+                    #     type=mujoco.mjtGeom.mjGEOM_ARROW,
+                    #     size=np.array(
+                    #         [0.015, 0.015, 1.0]
+                    #     ),  # [radius, radius, length]
+                    #     pos=obj_pos,
+                    #     mat=arrow_mat,
+                    #     rgba=np.array(
+                    #         [1.0, 0.1, 0.1, 0.15]
+                    #     ),  # Red semi-transparent
+                    # )
+                    # viewer.user_scn.ngeom = 1  # Tell viewer to draw 1 custom geom
 
                     F = IMPULSE_FORCE_N * d
                     for i in range(5):
@@ -242,6 +330,11 @@ class GravitylessObjectGrasping(MjSimulation):
                     if not self.check_contact_with_object():
                         all_pass = False
                         break
+                # PRESENTATION VIZ
+                #     viewer.user_scn.ngeom = 0  # Stop drawing the arrow
+                #     viewer.sync()
+                # viewer.user_scn.ngeom = 0  # Stop drawing the arrow
+                # viewer.sync()
 
                 results.append(all_pass)
 
