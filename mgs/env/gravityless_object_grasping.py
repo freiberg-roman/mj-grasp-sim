@@ -368,5 +368,6 @@ class GravitylessObjectGrasping(MjSimulation):
             if (contact_pairs[0] < table_id and contact_pairs[1] > table_id) or (
                 contact_pairs[0] > table_id and contact_pairs[1] < table_id
             ):
+
                 return True
         return False
