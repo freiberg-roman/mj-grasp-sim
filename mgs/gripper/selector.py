@@ -20,9 +20,7 @@ from omegaconf import DictConfig
 from mgs.gripper.allegro import GripperAllegro
 from mgs.gripper.base import MjShakableOpenCloseGripper
 from mgs.gripper.dexee import GripperDexee
-from mgs.gripper.google import GripperGoogle
 from mgs.gripper.panda import GripperPanda
-from mgs.gripper.robotiq2f85 import GripperRobotiq2f85
 from mgs.gripper.shadow import GripperShadowRight
 from mgs.gripper.static.allegro import StaticGripperAllegro
 from mgs.gripper.static.dexee import StaticGripperDexee
@@ -39,17 +37,11 @@ def get_gripper(cfg: DictConfig, default_pose=None) -> MjShakableOpenCloseGrippe
         if default_pose is None
         else default_pose
     )
-    if cfg.name == "GoogleGripper":
-        return GripperGoogle(pose)
-
     if cfg.name == "PandaGripper":
         return GripperPanda(pose)
 
     if cfg.name == "StaticPandaGripper":
         return StaticGripperPanda(pose)
-
-    if cfg.name == "Robotiq2f85Gripper":
-        return GripperRobotiq2f85(pose)
 
     if cfg.name == "ShadowHand":
         return GripperShadowRight(pose)
