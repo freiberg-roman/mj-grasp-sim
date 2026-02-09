@@ -28,7 +28,9 @@ dependencies = [
   "scipy==1.16.1",
   "pandas==2.3.2",
   "opencv-python==4.12.0.88",
-  "pyglet==1.5.31"
+  "pyglet==1.5.31",
+  "jax[cuda]==0.7.1",
+  "flax==0.10.7",
 ]
 
 [project.optional-dependencies]
@@ -37,11 +39,6 @@ dev = [
   "debugpy",
   "isort",
   "black"
-]
-jax = [
-  "jax==0.7.1",
-  "optax==0.2.3",
-  "flax==0.10.7",
 ]
 
 [tool.setuptools]

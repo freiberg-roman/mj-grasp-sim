@@ -114,6 +114,7 @@ class GravitylessObjectGrasping(MjSimulation):
         with mujoco.viewer.launch_passive(self.model, self.data) as viewer:
             while True:
                 viewer.sync()
+                mujoco.mj_step(self.model, self.data)
                 # mujoco.mj_step(self.model, self.data)
                 # viewer.cam.lookat[:] = pose_processed.pos
                 # viewer.cam.distance = 0.5  # Set zoom distance (adjust as needed)
@@ -124,6 +125,16 @@ class GravitylessObjectGrasping(MjSimulation):
                 #     viewer.cam.azimuth += 0.5
                 #     viewer.sync()
                 #     time.sleep(1.0 / 60.0)  # Cap at ~60 FPS
+
+    def acc_to_qpos(self, acc: np.ndarray, qvel_eps=1e-5):
+        mujoco.mj_resetData(self.model, self.data)
+        self.data.ctrl[:] = acc
+        mujoco.mj_step(self.model, self.data, 50)
+
+        while np.max(np.abs(self.data.qvel)) > qvel_eps:
+            mujoco.mj_step(self.model, self.data, 100)
+
+        return self.data.qpos
 
     def grasp_collision_mask(
         self,

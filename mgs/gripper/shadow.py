@@ -407,12 +407,7 @@ class GripperShadowRight(MjShakableOpenCloseGripper, MjScannable):
                 ]
             )
         )  # type: ignore
-        import time
-
-        for i in range(300):
-            mujoco.mj_step(sim.model, sim.data, 1)  # type: ignore
-            # viewer.sync()
-            # time.sleep(1.0 / 240.0)  # Cap at ~60 FPS
+        mujoco.mj_step(sim.model, sim.data, 300)  # type: ignore
 
     def get_freejoint_idxs(self, sim: MjSimulation) -> List[int]:
         start_idx = sim.get_joint_idxs(["freejoint"])[0]

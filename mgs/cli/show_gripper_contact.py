@@ -32,8 +32,7 @@ def setup(gripper):
     )
     marker = Marker(pose=marker_pose, name="contact_marker")
     scene = GravitylessObjectGrasping(gripper, marker)  # type: ignore
-    qpos = np.array([0, -1.3963, 0, 0, 0, -1.3963, 0, 0, 0, -1.3963, 0, 0])
-    qpos = np.array([0.0, 0.04])
+    qpos = np.array([0.0] * 22)
     scene.idle_grasp(
         pose=SE3Pose(
             pos=np.array([0, 0, 0]),

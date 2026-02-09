@@ -22,6 +22,7 @@ from mgs.gripper.base import MjShakableOpenCloseGripper
 from mgs.gripper.dexee import GripperDexee
 from mgs.gripper.panda import GripperPanda
 from mgs.gripper.shadow import GripperShadowRight
+from mgs.gripper.shadow_constraint import GripperShadowRightConstraint
 from mgs.gripper.static.allegro import StaticGripperAllegro
 from mgs.gripper.static.dexee import StaticGripperDexee
 from mgs.gripper.static.panda import StaticGripperPanda
@@ -45,6 +46,9 @@ def get_gripper(cfg: DictConfig, default_pose=None) -> MjShakableOpenCloseGrippe
 
     if cfg.name == "ShadowHand":
         return GripperShadowRight(pose)
+
+    if cfg.name == "ShadowHandConstraint":
+        return GripperShadowRightConstraint(pose)
 
     if cfg.name == "StaticShadowHand":
         return StaticGripperShadowRight(pose)
