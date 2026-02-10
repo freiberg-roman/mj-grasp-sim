@@ -5,6 +5,7 @@ from flax import nnx  # Assuming nnx is used
 
 from mgs.sampler.kin.base import KinematicsModel
 from mgs.sampler.kin.seg_op import kinematic_frames
+from mgs.sampler.kin.shadow_constraint.acc_to_qpos import load_shadow_acc_to_qpos
 
 
 class ShadowKinematicsModel(nnx.Module, KinematicsModel):
@@ -108,33 +109,29 @@ class ShadowKinematicsModel(nnx.Module, KinematicsModel):
         self.joint_ranges = nnx.Variable(
             jnp.array(
                 [
-                    # FF
-                    [-0.349066, 0.349066],
-                    [-0.261799, 1.5708],
-                    [0, 1.5708],
-                    [0, 1.5708],
-                    # MF
-                    [-0.349066, 0.349066],
-                    [-0.261799, 1.5708],
-                    [0, 1.5708],
-                    [0, 1.5708],
-                    # RF
-                    [-0.349066, 0.349066],
-                    [-0.261799, 1.5708],
-                    [0, 1.5708],
-                    [0, 1.5708],
-                    # LF
-                    [0, 0.785398],
-                    [-0.349066, 0.349066],
-                    [-0.261799, 1.5708],
-                    [0, 1.5708],
-                    [0, 1.5708],
                     # TH
                     [-1.0472, 1.0472],
                     [0, 1.22173],
                     [-0.20944, 0.20944],
                     [-0.698132, 0.698132],
                     [-0.261799, 1.5708],
+                    # FF
+                    [-0.349066, 0.349066],
+                    [-0.261799, 1.5708],
+                    [0, 2 * 1.5708],
+                    # MF
+                    [-0.349066, 0.349066],
+                    [-0.261799, 1.5708],
+                    [0, 2 * 1.5708],
+                    # RF
+                    [-0.349066, 0.349066],
+                    [-0.261799, 1.5708],
+                    [0, 2 * 1.5708],
+                    # LF
+                    [0, 0.785398],
+                    [-0.349066, 0.349066],
+                    [-0.261799, 1.5708],
+                    [0, 2 * 1.5708],
                 ]
             )
         )
@@ -245,7 +242,7 @@ except Exception as e:
     print(f"Warning: Path detection failed {e}. Using default DATA_PATH: {DATA_PATH}")
 
 
-SHADOW_NPZ_FILE = "gripper_shadow.npz"
+SHADOW_NPZ_FILE = "../gripper_shadow.npz"
 NUM_POINTS_VIS = 2000
 NORMAL_VIS_LENGTH = 0.02
 
@@ -313,8 +310,9 @@ def visualize_shadow_initial_contacts_normals():
     # These imports need to be resolvable
     kin_model = ShadowKinematicsModel()
     # --- Ensure using JAX array for theta ---
-    initial_pose_jax = jnp.array(
-        kin_model.init_pregrasp_joint.value
+    acc_to_qpos = load_shadow_acc_to_qpos()
+    initial_pose_jax = acc_to_qpos(
+        jnp.array(kin_model.init_pregrasp_joint.value)
     )  # Get initial pose
     print("  Using initial pre-grasp joint configuration.")
 

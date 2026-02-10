@@ -13,7 +13,7 @@ from mgs.sampler.antipodal import AntipodalGraspGenerator
 from mgs.sampler.contact import ContactBasedDiff
 from mgs.sampler.kin.allegro import AllegroKinematicsModel
 from mgs.sampler.kin.dexee import DexeeKinematicsModel
-from mgs.sampler.kin.shadow import ShadowKinematicsModel
+from mgs.sampler.kin.shadow_constraint.shadow_constraint import ShadowKinematicsModel
 from mgs.util.const import ASSET_PATH
 from mgs.util.file import generate_unique_hash  # uses secrets.token_hex under the hood
 from mgs.util.geo.transforms import SE3Pose

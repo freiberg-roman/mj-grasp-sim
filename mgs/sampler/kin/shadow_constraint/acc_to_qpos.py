@@ -97,7 +97,7 @@ class acc_to_qpos:
         return cls(ff=ff, mf=mf, rf=rf, lf=lf)
 
 
-def load_all_surrogates() -> acc_to_qpos:
+def load_shadow_acc_to_qpos() -> acc_to_qpos:
     ff = load_ff()
     mf = load_mf()
     rf = load_rf()
@@ -106,7 +106,7 @@ def load_all_surrogates() -> acc_to_qpos:
 
 
 if __name__ == "__main__":
-    f = load_all_surrogates()
+    f = load_shadow_acc_to_qpos()
     x0 = jnp.array([[1.0] * 18])
     y0 = f(x0)  # (1,22,)
     J = jax.jacrev(f)(x0)  # (1 ,22, 1, 18)

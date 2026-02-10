@@ -19,6 +19,7 @@ from mgs.sampler.helper import (
 )
 from mgs.sampler.kin.base import KinematicsModel
 from mgs.sampler.kin.op import forward_kinematic_point_transform
+from mgs.sampler.kin.shadow_constraint.acc_to_qpos import load_shadow_acc_to_qpos
 from mgs.util.geo.transforms import SE3Pose
 
 NUM_SURFACE_SAMPLES = 30000
@@ -88,6 +89,9 @@ class Trainer:
         )
 
 
+acc_to_qpos = load_shadow_acc_to_qpos()
+
+
 @nnx.jit
 def update(
     graph,
@@ -108,11 +112,12 @@ def update(
     )
 
     def loss_fn(to_opt, i):
+        joints = acc_to_qpos(to_opt.joints.value)
         transformed_values = nnx.vmap(
             forward_kinematic_point_transform,
             in_axes=(None, 0, None, None, None),  # over stack
         )(
-            to_opt.joints.value,
+            joints,
             forward_kin,
             contact_idx,
             *nnx.split(kin),
@@ -214,7 +219,7 @@ class ContactBasedDiff(GraspGenerator):
         x_axis = normalize_vector(x_axis)
         y_axis = jnp.cross(z_axis, x_axis)
 
-        (align_rot, align_pos) = gripper.align_to_approach.value
+        align_rot, align_pos = gripper.align_to_approach.value
         initial_rotations = jnp.stack([x_axis, y_axis, z_axis], axis=-1)
         align_pos = jnp.einsum("...ij,j->...i", initial_rotations, align_pos)
         initial_rotations = jnp.einsum("...ij,jk->...ik", initial_rotations, align_rot)
@@ -285,7 +290,7 @@ class ContactBasedDiff(GraspGenerator):
 
         rot = rotation_6d_to_matrix(opt_state.rot.value)
         trans = opt_state.pos.value
-        joints = np.array(opt_state.joints.value)
+        joints = np.array(acc_to_qpos(opt_state.joints.value))
         trans = trans[:, :, None]  # reshape to (num, 3, 1)
         Hs_3x4 = jnp.concatenate([rot, trans], axis=-1)
 
