@@ -126,10 +126,10 @@ class GravitylessObjectGrasping(MjSimulation):
                 #     viewer.sync()
                 #     time.sleep(1.0 / 60.0)  # Cap at ~60 FPS
 
-    def acc_to_qpos(self, acc: np.ndarray, qvel_eps=1e-5):
+    def acc_to_qpos(self, acc: np.ndarray, qvel_eps=1e-9):
         mujoco.mj_resetData(self.model, self.data)
         self.data.ctrl[:] = acc
-        mujoco.mj_step(self.model, self.data, 50)
+        mujoco.mj_step(self.model, self.data, 500)
 
         while np.max(np.abs(self.data.qvel)) > qvel_eps:
             mujoco.mj_step(self.model, self.data, 100)
