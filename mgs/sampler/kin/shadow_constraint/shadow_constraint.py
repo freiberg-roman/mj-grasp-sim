@@ -192,17 +192,17 @@ class ShadowKinematicsModel(nnx.Module, KinematicsModel):
                     0.45,  # TH 1
                     -0.350,  # FF 4
                     0.425,  # FF 3
-                    0.5,  # FF 0
+                    1.5,  # FF 0
                     -0.095,  # MF 4
                     0.415,  # MF 3
-                    0.5,  # MF 0
+                    1.5,  # MF 0
                     -0.075,  # RF 4
                     0.435,  # RF 3
-                    0.5,  # RF 0
+                    1.5,  # RF 0
                     0.0,  # LF 5
                     -0.220,  # LF 4
                     0.255,  # LF 3
-                    0.5,  # LF 0
+                    1.5,  # LF 0
                 ]
             )
         )

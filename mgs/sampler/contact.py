@@ -164,6 +164,37 @@ def update(
     return losses, nnx.state((kin, optimizer, to_opt))
 
 
+RANGES = [
+    # FF
+    [-0.349066, 0.349066],
+    [-0.261799, 1.5708],
+    [0, 1.5708],
+    [0, 1.5708],
+    # MF
+    [-0.349066, 0.349066],
+    [-0.261799, 1.5708],
+    [0, 1.5708],
+    [0, 1.5708],
+    # RF
+    [-0.349066, 0.349066],
+    [-0.261799, 1.5708],
+    [0, 1.5708],
+    [0, 1.5708],
+    # LF
+    [0, 0.785398],
+    [-0.349066, 0.349066],
+    [-0.261799, 1.5708],
+    [0, 1.5708],
+    [0, 1.5708],
+    # TH
+    [-1.0472, 1.0472],
+    [0, 1.22173],
+    [-0.20944, 0.20944],
+    [-0.698132, 0.698132],
+    [-0.261799, 1.5708],
+]
+
+
 class ContactBasedDiff(GraspGenerator):
     """
     Generates antipodal grasps by sampling points on the object surface,
@@ -291,6 +322,8 @@ class ContactBasedDiff(GraspGenerator):
         rot = rotation_6d_to_matrix(opt_state.rot.value)
         trans = opt_state.pos.value
         joints = np.array(acc_to_qpos(opt_state.joints.value))
+        ranges = np.array(RANGES)
+        joints = np.clip(joints, ranges[:, 0], ranges[:, 1])
         trans = trans[:, :, None]  # reshape to (num, 3, 1)
         Hs_3x4 = jnp.concatenate([rot, trans], axis=-1)
 
