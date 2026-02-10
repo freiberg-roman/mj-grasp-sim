@@ -321,6 +321,7 @@ class ContactBasedDiff(GraspGenerator):
 
         rot = rotation_6d_to_matrix(opt_state.rot.value)
         trans = opt_state.pos.value
+        acc = np.array(opt_state.joints.value)
         joints = np.array(acc_to_qpos(opt_state.joints.value))
         ranges = np.array(RANGES)
         joints = np.clip(joints, ranges[:, 0], ranges[:, 1])
@@ -330,5 +331,5 @@ class ContactBasedDiff(GraspGenerator):
         last_row = jnp.tile(jnp.array([0, 0, 0, 1])[None, None, :], (num, 1, 1))
 
         Hs = jnp.concatenate([Hs_3x4, last_row], axis=1)
-        aux_info = {"joints": joints}
+        aux_info = {"joints": joints, "acc": acc}
         return Hs, aux_info

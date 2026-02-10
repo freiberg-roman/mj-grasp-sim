@@ -285,7 +285,7 @@ def main(cfg: DictConfig):
         round_idx += 1
 
         # ---- collect collision-free grasps until eval threshold ----
-        collected_poses, collected_joints = [], []
+        collected_poses, collected_joints, collected_acc = [], [], []
 
         # per-round instrumentation
         r_sampled = 0
@@ -318,6 +318,7 @@ def main(cfg: DictConfig):
                     num=int(cfg.sample_grasps), gripper=kin_model  # type: ignore
                 )
                 joints = aux_info["joints"]
+                acc = aux_info["acc"]
             else:
                 raise ValueError("Not known grasp sampler")
             r_t_sampling += time.perf_counter() - t0
@@ -341,18 +342,20 @@ def main(cfg: DictConfig):
             if n_cf_inc:
                 collected_poses.append(poses_se3.to_mat()[collision_mask])
                 collected_joints.append(joints[collision_mask])
+                collected_acc.append(acc[collision_mask])
 
         if not collected_poses:
             continue
 
         cf_poses_mat = np.concatenate(collected_poses, axis=0)
         cf_joints = np.concatenate(collected_joints, axis=0)
+        cf_acc = np.concatenate(collected_acc, axis=0)
         cf_poses = SE3Pose.from_mat(cf_poses_mat)
 
         # ---- stability evaluation ----
         t2 = time.perf_counter()
         stable_mask = env.grasp_stability_evaluation_from_joints(
-            cf_poses, cf_joints, impulse_force=float(cfg.force)
+            cf_poses, cf_joints, cf_acc, impulse_force=float(cfg.force)
         )
         r_t_eval += time.perf_counter() - t2
 

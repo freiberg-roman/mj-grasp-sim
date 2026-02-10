@@ -17,11 +17,13 @@
 import os
 from typing import Any, Dict, List, Tuple
 
+import jax
 import mujoco
 import numpy as np
 
 from mgs.core.simualtion import MjSimulation
 from mgs.gripper.base import MjScannable, MjShakableOpenCloseGripper
+from mgs.sampler.kin.shadow_constraint.acc_to_qpos import load_shadow_acc_to_qpos
 from mgs.util.const import ASSET_PATH
 from mgs.util.geo.transforms import SE3Pose
 
@@ -340,10 +342,36 @@ XML = """
     <weld body1="mocap" body2="rh_wrist"/>
   </equality>
 """
+RANGES = [
+    # TH
+    [-1.0472, 1.0472],
+    [0, 1.22173],
+    [-0.20944, 0.20944],
+    [-0.698132, 0.698132],
+    [-0.261799, 1.5708],
+    # FF
+    [-0.349066, 0.349066],
+    [-0.261799, 1.5708],
+    [0, 3.1415],
+    # MF
+    [-0.349066, 0.349066],
+    [-0.261799, 1.5708],
+    [0, 3.1415],
+    # RF
+    [-0.349066, 0.349066],
+    [-0.261799, 1.5708],
+    [0, 3.1415],
+    # LF
+    [0, 0.785398],
+    [-0.349066, 0.349066],
+    [-0.261799, 1.5708],
+    [0, 3.1415],
+]
 
 
 class GripperShadowRight(MjShakableOpenCloseGripper, MjScannable):
     def __init__(self, pose: SE3Pose, grasp_type=None):
+        self.surrogate = load_shadow_acc_to_qpos()
         super().__init__(pose, "rh_wrist")
 
     def to_xml(self) -> Tuple[str, Dict[str, Any]]:
@@ -379,6 +407,134 @@ class GripperShadowRight(MjShakableOpenCloseGripper, MjScannable):
         sim.set_qpos(open_pose, gripper_idxs)  # type: ignore
         sim.data.ctrl[:] = self._qpos_to_qacc(np.copy(open_pose))  # type: ignore
 
+    # Finger prefixes used for per-finger contact detection.
+    # Maps body-name prefixes to the set of body names belonging to that finger.
+    _FINGER_PREFIXES = ("rh_ff", "rh_mf", "rh_rf", "rh_lf", "rh_th")
+
+    def _get_finger_contacts(self, sim: MjSimulation) -> set:
+        """Return set of finger prefixes (e.g. {'rh_ff', 'rh_th'}) that are
+        currently in contact with the object.
+
+        Uses the same geom-ID ordering trick as check_contact_with_object():
+        gripper geoms have IDs < table_id, object geoms have IDs > table_id.
+        """
+        table_id = sim.model.geom("geom:ground").id
+        contacted = set()
+
+        for g1, g2 in sim.data.contact.geom:
+            # Identify gripper-object contact pairs
+            if g1 < table_id and g2 > table_id:
+                gripper_geom_id = g1
+            elif g2 < table_id and g1 > table_id:
+                gripper_geom_id = g2
+            else:
+                continue
+
+            # Walk up the body tree from the gripper geom to find which finger
+            body_id = sim.model.geom_bodyid[gripper_geom_id]
+            while body_id > 0:
+                body_name = mujoco.mj_id2name(
+                    sim.model, mujoco.mjtObj.mjOBJ_BODY, body_id
+                )
+                if body_name is not None:
+                    for prefix in self._FINGER_PREFIXES:
+                        if body_name.startswith(prefix):
+                            contacted.add(prefix)
+                            break
+                body_id = sim.model.body_parentid[body_id]
+
+        return contacted
+
+    def close_dip_pip(self, sim: MjSimulation, pose: SE3Pose, acc: np.ndarray):
+        """Incrementally close each finger's DIP/PIP tendon (and thumb IP)
+        independently until it contacts the object, then back off to a
+        collision-free configuration.
+
+        Fingers that never contact the object are reset to their original
+        acc value (controlled by RESET_NO_CONTACT_FINGERS below).
+        """
+        # ----------------------------------------------------------------
+        # CONFIG — toggle to keep or reset fingers that never made contact.
+        # Set False to keep the fully-closed position for non-contacting fingers.
+        RESET_NO_CONTACT_FINGERS = True
+        # ----------------------------------------------------------------
+
+        sim.data.mocap_pos = pose.pos
+        sim.data.mocap_quat = pose.quat
+
+        idx = sim.get_joint_idxs(self.get_actuator_joint_names())
+        ranges = np.array(RANGES)
+
+        # Finger acc indices → body prefix for contact detection
+        # FF0=7, MF0=10, RF0=13, LF0=17 are the coupled DIP/PIP tendons
+        # TH1=4 is the thumb IP joint
+        finger_acc = {
+            7: "rh_ff",
+            10: "rh_mf",
+            13: "rh_rf",
+            17: "rh_lf",
+            4: "rh_th",
+        }
+
+        delta = 0.01
+        next_acc = acc.copy()
+        original_acc = acc.copy()
+        done = set()  # acc indices whose closing is finished
+        contacted = set()  # acc indices that made contact with the object
+
+        # --- Forward: increment each finger until contact or range limit ---
+        max_steps = int(np.pi / delta) + 10
+        with mujoco.viewer.launch_passive(sim.model, sim.data) as viewer:
+            for _ in range(max_steps):
+                if len(done) == len(finger_acc):
+                    break
+
+                for ai in finger_acc:
+                    if ai in done:
+                        continue
+                    next_acc[ai] += delta
+                    next_acc[ai] = np.clip(next_acc[ai], ranges[ai, 0], ranges[ai, 1])
+                    if next_acc[ai] >= ranges[ai, 1] - 1e-6:
+                        done.add(ai)
+
+                next_qpos = np.array(self.surrogate(next_acc))
+                sim.set_qpos(next_qpos, idx)
+                mujoco.mj_forward(sim.model, sim.data)
+                viewer.sync()
+
+                in_contact = self._get_finger_contacts(sim)
+                for ai, prefix in finger_acc.items():
+                    if ai not in done and prefix in in_contact:
+                        done.add(ai)
+                        contacted.add(ai)
+
+            # --- Reset non-contacting fingers to their original value ---
+            if RESET_NO_CONTACT_FINGERS:
+                for ai in finger_acc:
+                    if ai not in contacted:
+                        next_acc[ai] = original_acc[ai]
+
+            # --- Backtrack contacting fingers until collision-free ---
+            for ai in contacted:
+                prefix = finger_acc[ai]
+                for _ in range(10):
+                    next_acc[ai] -= delta
+                    next_acc[ai] = np.clip(next_acc[ai], ranges[ai, 0], ranges[ai, 1])
+
+                    next_qpos = np.array(self.surrogate(next_acc))
+                    sim.set_qpos(next_qpos, idx)
+                    mujoco.mj_forward(sim.model, sim.data)
+                    viewer.sync()
+
+                    if prefix not in self._get_finger_contacts(sim):
+                        break
+
+            # Final state
+            next_qpos = np.array(self.surrogate(next_acc))
+            sim.set_qpos(next_qpos, idx)
+            mujoco.mj_forward(sim.model, sim.data)
+            viewer.sync()
+
     def close_gripper_at(self, sim: MjSimulation, pose: SE3Pose):
         sim.data.mocap_pos = pose.pos
         sim.data.mocap_quat = pose.quat
@@ -410,7 +566,7 @@ class GripperShadowRight(MjShakableOpenCloseGripper, MjScannable):
                 ]
             )
         )  # type: ignore
-        mujoco.mj_step(sim.model, sim.data, 300)  # type: ignore
+        mujoco.mj_step(sim.model, sim.data, 250)  # type: ignore
 
     def get_freejoint_idxs(self, sim: MjSimulation) -> List[int]:
         start_idx = sim.get_joint_idxs(["freejoint"])[0]

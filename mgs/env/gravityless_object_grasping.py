@@ -226,6 +226,7 @@ class GravitylessObjectGrasping(MjSimulation):
         self,
         poses: SE3Pose,
         joints: np.ndarray,
+        acc: np.ndarray,
         impulse_force=300.0,
         enough_stable=None,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -277,6 +278,7 @@ class GravitylessObjectGrasping(MjSimulation):
                 self.set_qpos(joints[i], gripper_joint_idxs)
                 self.gripper.set_pose(self, pose_processed)
                 mujoco.mj_forward(self.model, self.data)
+                self.gripper.close_dip_pip(self, pose_processed, acc[i])
                 self.gripper.close_gripper_at(self, pose_processed)
 
                 if not self.check_contact_with_object():
