@@ -255,6 +255,27 @@ class ClutterTableEnv(MjScanEnv, Loadable):
                 return 1.0
         return 0.0
 
+    def check_gripper_collision_positions(self) -> np.ndarray:
+        table_id = self.model.geom("geom:table").id
+        collisions = []
+
+        for i in range(self.data.ncon):
+            c = self.data.contact[i]
+            g1, g2 = int(c.geom1), int(c.geom2)
+
+            if (
+                (g1 < table_id and g2 > table_id)
+                or (g2 < table_id and g1 > table_id)
+                or (g1 == table_id and g2 < table_id)
+                or (g2 == table_id and g1 < table_id)
+            ):
+                collisions.append(np.array(c.pos, dtype=np.float64))
+
+        if not collisions:
+            return np.empty((0, 3), dtype=np.float64)
+
+        return np.stack(collisions, axis=0)
+
     def check_gripper_contact(self):
         table_id = self.model.geom("geom:table").id
         for contact_pairs in self.data.contact.geom:
@@ -329,7 +350,7 @@ class ClutterTableEnv(MjScanEnv, Loadable):
                     pbar.update(1)
                     pbar.set_postfix_str(
                         f"succ={count_stable} fail={eval_count - count_stable} "
-                        f"skipped={skipped_count} SR={sr*100:.1f}%"
+                        f"skipped={skipped_count} SR={sr * 100:.1f}%"
                     )
                 continue
 
@@ -372,7 +393,7 @@ class ClutterTableEnv(MjScanEnv, Loadable):
                 pbar.update(1)
                 pbar.set_postfix_str(
                     f"succ={count_stable} fail={eval_count - count_stable} "
-                    f"skipped={skipped_count} SR={sr*100:.1f}%"
+                    f"skipped={skipped_count} SR={sr * 100:.1f}%"
                 )
 
         if pbar is not None:
@@ -384,7 +405,7 @@ class ClutterTableEnv(MjScanEnv, Loadable):
             print(
                 f"[grasp_stable_mask] evaluated={eval_count}, succ={count_stable}, "
                 f"fail={eval_count - count_stable}, skipped={skipped_count}, "
-                f"contact_fail={contact_loss_failures}, SR={sr*100:.1f}%"
+                f"contact_fail={contact_loss_failures}, SR={sr * 100:.1f}%"
             )
 
         stable_grasp_masks = np.array(results, dtype=bool)
@@ -396,6 +417,78 @@ class ClutterTableEnv(MjScanEnv, Loadable):
         obj_position = np.copy(self.data.qpos[jnt_adr_start : jnt_adr_start + 3])
         obj_quat = np.copy(self.data.qpos[jnt_adr_start + 3 : jnt_adr_start + 7])
         return SE3Pose(obj_position, obj_quat, "wxyz")
+
+    def grasp_collision_mask_info(self, poses: SE3Pose, joints: np.ndarray):
+        if len(poses) != len(joints):
+            raise ValueError(
+                f"Number of poses ({len(poses)}) must match number of joints ({len(joints)})."
+            )
+        if joints.shape[1] != len(self.gripper.get_actuator_joint_names()):
+            raise ValueError(
+                f"Joints array has incorrect dimension ({joints.shape[1]}), "
+                f"expected {len(self.gripper.get_actuator_joint_names())}."
+            )
+
+        collision_free_grasps: List[bool] = []
+        detectable_collision: List[bool] = []
+
+        initial_state = self.get_state()
+        gripper_joint_idxs = self.get_joint_idxs(
+            self.gripper.get_actuator_joint_names()
+        )
+        b2c = self.gripper.base_to_contact_transform()
+
+        for i in range(len(joints)):
+            pose = poses[i]
+            joint = joints[i]
+
+            in_bound = (
+                (pose.pos[..., 0] < 0.20)
+                & (pose.pos[..., 0] > -0.20)
+                & (pose.pos[..., 1] < 0.20)
+                & (pose.pos[..., 1] > -0.20)
+                & (pose.pos[..., 2] < 1.0)
+                & (pose.pos[..., 2] > 0.0)
+            ).item()
+
+            if not in_bound:
+                collision_free_grasps.append(False)
+                detectable_collision.append(True)  # note this case is also detectable
+                continue
+
+            # restore scene
+            self.set_state(initial_state)
+
+            pose_processed = pose @ b2c
+            self.set_qpos(joint, gripper_joint_idxs)
+            self.gripper.set_pose(self, pose_processed)
+
+            mujoco.mj_forward(self.model, self.data)
+
+            collisions = self.check_gripper_collision_positions()  # (N,3)
+
+            has_collision = collisions.shape[0] > 0
+            if not has_collision:
+                collision_free_grasps.append(True)
+                detectable_collision.append(True)
+                continue
+
+            visible = np.any(
+                (collisions[:, 0] < 0.225)
+                & (collisions[:, 0] > -0.225)
+                & (collisions[:, 1] < 0.225)
+                & (collisions[:, 1] > -0.225)
+                & (collisions[:, 2] < 1.0)
+                & (collisions[:, 2] > 0.0)
+            )
+
+            collision_free_grasps.append(False)
+            detectable_collision.append(bool(visible))
+
+        self.set_state(initial_state)
+        return np.array(collision_free_grasps, dtype=bool), np.array(
+            detectable_collision, dtype=bool
+        )
 
     def grasp_collision_mask(
         self,
@@ -473,6 +566,7 @@ class ClutterTableEnv(MjScanEnv, Loadable):
                 pose_processed = grasp_pose @ b2c
 
                 # place gripper & evaluate contacts
+
                 self.set_qpos(joint, gripper_joint_idxs)
                 self.gripper.set_pose(self, pose_processed)
                 mujoco.mj_forward(self.model, self.data)

@@ -11,7 +11,7 @@ target_grasps: 2000
 sample_grasps: 2000
 
 # num grasps to collect from sampling + collision filtering till stability eval.
-collect_grasps_till_eval: 5
+collect_grasps_till_eval: 20
 
 # num grasps to collect till save
 collect_grasps_till_save: 100

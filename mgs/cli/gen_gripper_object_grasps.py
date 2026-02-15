@@ -332,7 +332,7 @@ def main(cfg: DictConfig):
             poses_se3 = SE3Pose.from_mat(poses_mat)
             t1 = time.perf_counter()
             collision_mask = env.grasp_collision_mask(
-                poses_se3, joints, with_padding=0.002
+                poses_se3, joints, with_padding=0.005
             )
             r_t_cf += time.perf_counter() - t1
 
@@ -346,6 +346,9 @@ def main(cfg: DictConfig):
 
         if not collected_poses:
             continue
+
+        # GRASP refinement
+        cf_joints, cf_acc = env.grasp_refinement(cf_poses, cf_joints, cf_acc)
 
         cf_poses_mat = np.concatenate(collected_poses, axis=0)
         cf_joints = np.concatenate(collected_joints, axis=0)

@@ -473,7 +473,8 @@ class GripperShadowRight(MjShakableOpenCloseGripper, MjScannable):
             10: "rh_mf",
             13: "rh_rf",
             17: "rh_lf",
-            4: "rh_th",
+            3: "rh_th_pip",
+            4: "rh_th_dip",
         }
 
         delta = 0.01
@@ -534,6 +535,7 @@ class GripperShadowRight(MjShakableOpenCloseGripper, MjScannable):
             sim.set_qpos(next_qpos, idx)
             mujoco.mj_forward(sim.model, sim.data)
             viewer.sync()
+        return next_acc
 
     def close_gripper_at(self, sim: MjSimulation, pose: SE3Pose):
         sim.data.mocap_pos = pose.pos

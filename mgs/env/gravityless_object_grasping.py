@@ -222,6 +222,28 @@ class GravitylessObjectGrasping(MjSimulation):
         # Create rotation matrix [x, y, z] and flatten for MuJoCo
         return np.column_stack([x, y, z]).flatten()
 
+    def grasp_refinement(
+        self,
+        poses: SE3Pose,
+        acc: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        num_grasps = len(poses)
+        gripper_joint_idxs = self.get_joint_idxs(
+            self.gripper.get_actuator_joint_names()
+        )
+
+        for i in tqdm(range(num_grasps)):
+            mujoco.mj_resetData(self.model, self.data)
+            mujoco.mj_forward(self.model, self.data)
+
+            b2c = self.gripper.base_to_contact_transform()
+            pose_processed = poses[i] @ b2c
+            self.gripper.set_pose(self, pose_processed)
+            mujoco.mj_forward(self.model, self.data)
+            acc_refined = self.gripper.close_dip_pip(self, pose_processed, acc[i])
+            acc_refined
+            joitns = self.gripper.surrogate(acc_refined)
+
     def grasp_stability_evaluation_from_joints(
         self,
         poses: SE3Pose,
