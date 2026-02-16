@@ -32,7 +32,7 @@ from .base import MjScannable, MjShakableOpenCloseGripper
 # cf. 3rd-party-licenses.txt file in the root directory of this source tree.
 
 DEFAULT_FRICTION = "0.8 0.05 0.005"
-DEFAULT_FORCE = "15"
+DEFAULT_FORCE = "4"
 FORCE_ENV_KEY = "PANDA_FORCE"
 
 
