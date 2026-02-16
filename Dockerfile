@@ -16,15 +16,24 @@
 
 FROM python:3.11-slim
 
-ENV http_proxy=${http_proxy} \
-    https_proxy=${https_proxy} \
-    ftp_proxy=${ftp_proxy} \
-    no_proxy=${no_proxy} \
-    HTTP_PROXY=${http_proxy} \
-    HTTPS_PROXY=${https_proxy} \
-    FTP_PROXY=${ftp_proxy} \
-    NO_PROXY=${no_proxy}
+# Accept build args
+ARG http_proxy
+ARG https_proxy
+ARG ftp_proxy
+ARG no_proxy
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG FTP_PROXY
+ARG NO_PROXY
 
+ENV http_proxy=$http_proxy \
+    https_proxy=$https_proxy \
+    ftp_proxy=$ftp_proxy \
+    no_proxy=$no_proxy \
+    HTTP_PROXY=$HTTP_PROXY \
+    HTTPS_PROXY=$HTTPS_PROXY \
+    FTP_PROXY=$FTP_PROXY \
+    NO_PROXY=$NO_PROXY
 
 WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
@@ -49,4 +58,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY . .
 RUN uv sync --frozen --no-dev
 
-ENTRYPOINT ["uv", "run", "python", "-m"]
+ENV VIRTUAL_ENV=/app/.venv
+ENV PATH="/app/.venv/bin:${PATH}"
+
+ENTRYPOINT ["python", "-m"]
