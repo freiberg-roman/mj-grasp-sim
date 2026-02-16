@@ -14,27 +14,39 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-FROM python:3.11-slim AS base-app
+FROM python:3.11-slim
 
-# Sets up main app directory
+ENV http_proxy=${http_proxy} \
+    https_proxy=${https_proxy} \
+    ftp_proxy=${ftp_proxy} \
+    no_proxy=${no_proxy} \
+    HTTP_PROXY=${http_proxy} \
+    HTTPS_PROXY=${https_proxy} \
+    FTP_PROXY=${ftp_proxy} \
+    NO_PROXY=${no_proxy}
+
+
 WORKDIR /app
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-RUN apt-get update && apt-get install -y locales libglew-dev libglib2.0-0 && rm -rf /var/lib/apt/lists/* \
-	&& localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8 \
-	&& mkdir -p /out && mkdir -p /stats && mkdir -p /in
+RUN apt-get update && apt-get install -y \
+    locales \
+    libglew-dev \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/* \
+    && localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8 \
+    && mkdir -p /out /stats /in
 
 ENV LANG=en_US.utf8
 ENV MUJOCO_GL=egl
 ENV MGS_OUTPUT_DIR=/out
 ENV MGS_INPUT_DIR=/in
 
-# Copies the current directory contents into the container at /app
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+# Copy the rest of the project
 COPY . .
-RUN pip install --upgrade pip && pip install -e .
-# type in <script to execute>
-ENTRYPOINT ["python", "-m"]
+RUN uv sync --frozen --no-dev
 
-FROM base-app AS mgs-jax
-RUN pip install -e .[jax]
-ENTRYPOINT ["python", "-m"]
-
+ENTRYPOINT ["uv", "run", "python", "-m"]
