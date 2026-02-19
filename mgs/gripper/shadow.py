@@ -17,17 +17,13 @@
 import os
 from typing import Any, Dict, List, Tuple
 
-import jax
 import mujoco
 import numpy as np
 
 from mgs.core.simualtion import MjSimulation
 from mgs.gripper.base import MjScannable, MjShakableOpenCloseGripper
-from mgs.sampler.kin.shadow_constraint.acc_to_qpos import load_shadow_acc_to_qpos
 from mgs.util.const import ASSET_PATH
 from mgs.util.geo.transforms import SE3Pose
-
-FRICTION = 1.0
 
 # The XML template string is derived from MuJoCo Menagerie
 # (https://github.com/google-deepmind/mujoco_menagerie/tree/469893211c41d5da9c314f5ab58059fa17c8e360)
@@ -134,48 +130,48 @@ XML = """
         <freejoint name="freejoint"/>
         <inertial mass="0.1" pos="0 0 0.029" quat="0.5 0.5 0.5 0.5" diaginertia="6.4e-05 4.38e-05 3.5e-05"/>
         <geom class="plastic_visual" mesh="wrist" material="metallic"/>
-        <geom size="0.0135 0.015" quat="0.499998 0.5 0.5 -0.500002" type="cylinder" class="plastic_collision" friction="{fric}"/>
-        <geom size="0.011 0.005" pos="-0.026 0 0.034" quat="1 0 1 0" type="cylinder" class="plastic_collision" friction="{fric}"/>
-        <geom size="0.011 0.005" pos="0.031 0 0.034" quat="1 0 1 0" type="cylinder" class="plastic_collision" friction="{fric}"/>
+        <geom size="0.0135 0.015" quat="0.499998 0.5 0.5 -0.500002" type="cylinder" class="plastic_collision" friction="2.5"/>
+        <geom size="0.011 0.005" pos="-0.026 0 0.034" quat="1 0 1 0" type="cylinder" class="plastic_collision" friction="2.5"/>
+        <geom size="0.011 0.005" pos="0.031 0 0.034" quat="1 0 1 0" type="cylinder" class="plastic_collision" friction="2.5"/>
         <geom size="0.0135 0.009 0.005" pos="-0.021 0 0.011" quat="0.923879 0 0.382684 0" type="box"
-          class="plastic_collision" friction="{fric}"/>
+          class="plastic_collision" friction="2.5"/>
         <geom size="0.0135 0.009 0.005" pos="0.026 0 0.01" quat="0.923879 0 -0.382684 0" type="box"
-          class="plastic_collision" friction="{fric}"/>
+          class="plastic_collision" friction="2.5"/>
         <body name="rh_palm" pos="0 0 0.034">
           <inertial mass="0.3" pos="0 0 0.035" quat="1 0 0 1" diaginertia="0.0005287 0.0003581 0.000191"/>
           <site name="grasp_site" pos="0 -.035 0.09" group="4"/>
           <geom class="plastic_visual" mesh="palm"/>
-          <geom size="0.031 0.0035 0.049" pos="0.011 0.0085 0.038" type="box" class="plastic_collision" friction="{fric}"/>
-          <geom size="0.018 0.0085 0.049" pos="-0.002 -0.0035 0.038" type="box" class="plastic_collision" friction="{fric}"/>
-          <geom size="0.013 0.0085 0.005" pos="0.029 -0.0035 0.082" type="box" class="plastic_collision" friction="{fric}" />
+          <geom size="0.031 0.0035 0.049" pos="0.011 0.0085 0.038" type="box" class="plastic_collision" friction="2.5"/>
+          <geom size="0.018 0.0085 0.049" pos="-0.002 -0.0035 0.038" type="box" class="plastic_collision" friction="2.5"/>
+          <geom size="0.013 0.0085 0.005" pos="0.029 -0.0035 0.082" type="box" class="plastic_collision" friction="2.5" />
           <geom size="0.013 0.007 0.009" pos="0.0265 -0.001 0.07" quat="0.987241 0.0990545 0.0124467 0.124052"
-            type="box" class="plastic_collision" friction="{fric}"/>
-          <geom size="0.0105 0.0135 0.012" pos="0.0315 -0.0085 0.001" type="box" class="plastic_collision" friction="{fric}"/>
+            type="box" class="plastic_collision" friction="2.5"/>
+          <geom size="0.0105 0.0135 0.012" pos="0.0315 -0.0085 0.001" type="box" class="plastic_collision" friction="2.5"/>
           <geom size="0.011 0.0025 0.015" pos="0.0125 -0.015 0.004" quat="0.971338 0 0 -0.237703" type="box"
-            class="plastic_collision" friction="{fric}"/>
-          <geom size="0.009 0.012 0.002" pos="0.011 0 0.089" type="box" class="plastic_collision" friction="{fric}"/>
-          <geom size="0.01 0.012 0.02" pos="-0.03 0 0.009" type="box" class="plastic_collision" friction="{fric}"/>
+            class="plastic_collision" friction="2.5"/>
+          <geom size="0.009 0.012 0.002" pos="0.011 0 0.089" type="box" class="plastic_collision" friction="2.5"/>
+          <geom size="0.01 0.012 0.02" pos="-0.03 0 0.009" type="box" class="plastic_collision" friction="2.5"/>
           <body name="rh_ffknuckle" pos="0.033 0 0.095">
             <inertial mass="0.008" pos="0 0 0" quat="0.5 0.5 -0.5 0.5" diaginertia="3.2e-07 2.6e-07 2.6e-07"/>
             <joint name="rh_FFJ4" class="knuckle"/>
             <geom pos="0 0 0.0005" class="plastic_visual" mesh="f_knuckle" material="metallic"/>
-            <geom size="0.009 0.009" quat="1 0 1 0" type="cylinder" class="plastic_collision" friction="{fric}"/>
+            <geom size="0.009 0.009" quat="1 0 1 0" type="cylinder" class="plastic_collision" friction="2.5"/>
             <body name="rh_ffproximal">
               <inertial mass="0.03" pos="0 0 0.0225" quat="1 0 0 1" diaginertia="1e-05 9.8e-06 1.8e-06"/>
               <joint name="rh_FFJ3" class="proximal"/>
               <geom class="plastic_visual" mesh="f_proximal"/>
-              <geom size="0.009 0.02" pos="0 0 0.025" type="capsule" class="plastic_collision" friction="{fric}"/>
+              <geom size="0.009 0.02" pos="0 0 0.025" type="capsule" class="plastic_collision" friction="2.5"/>
               <body name="rh_ffmiddle" pos="0 0 0.045">
                 <inertial mass="0.017" pos="0 0 0.0125" quat="1 0 0 1" diaginertia="2.7e-06 2.6e-06 8.7e-07"/>
                 <joint name="rh_FFJ2" class="middle_distal"/>
                 <geom class="plastic_visual" mesh="f_middle"/>
-                <geom size="0.009 0.0125" pos="0 0 0.0125" type="capsule" class="plastic_collision" friction="{fric}"/>
+                <geom size="0.009 0.0125" pos="0 0 0.0125" type="capsule" class="plastic_collision" friction="2.5"/>
                 <body name="rh_ffdistal" pos="0 0 0.025">
                   <inertial mass="0.013" pos="0 0 0.0130769" quat="1 0 0 1"
                     diaginertia="1.28092e-06 1.12092e-06 5.3e-07"/>
                   <joint name="rh_FFJ1" class="middle_distal"/>
                   <geom class="plastic_visual" mesh="f_distal_pst"/>
-                  <geom class="plastic_collision" type="mesh" mesh="f_distal_pst" friction="{fric}"/>
+                  <geom class="plastic_collision" type="mesh" mesh="f_distal_pst" friction="2.5"/>
                 </body>
               </body>
             </body>
@@ -184,23 +180,23 @@ XML = """
             <inertial mass="0.008" pos="0 0 0" quat="0.5 0.5 -0.5 0.5" diaginertia="3.2e-07 2.6e-07 2.6e-07"/>
             <joint name="rh_MFJ4" class="knuckle"/>
             <geom pos="0 0 0.0005" class="plastic_visual" mesh="f_knuckle" material="metallic"/>
-            <geom size="0.009 0.009" quat="1 0 1 0" type="cylinder" class="plastic_collision" friction="{fric}"/>
+            <geom size="0.009 0.009" quat="1 0 1 0" type="cylinder" class="plastic_collision" friction="2.5"/>
             <body name="rh_mfproximal">
               <inertial mass="0.03" pos="0 0 0.0225" quat="1 0 0 1" diaginertia="1e-05 9.8e-06 1.8e-06"/>
               <joint name="rh_MFJ3" class="proximal"/>
               <geom class="plastic_visual" mesh="f_proximal"/>
-              <geom size="0.009 0.02" pos="0 0 0.025" type="capsule" class="plastic_collision" friction="{fric}"/>
+              <geom size="0.009 0.02" pos="0 0 0.025" type="capsule" class="plastic_collision" friction="2.5"/>
               <body name="rh_mfmiddle" pos="0 0 0.045">
                 <inertial mass="0.017" pos="0 0 0.0125" quat="1 0 0 1" diaginertia="2.7e-06 2.6e-06 8.7e-07"/>
                 <joint name="rh_MFJ2" class="middle_distal"/>
                 <geom class="plastic_visual" mesh="f_middle"/>
-                <geom size="0.009 0.0125" pos="0 0 0.0125" type="capsule" class="plastic_collision" friction="{fric}"/>
+                <geom size="0.009 0.0125" pos="0 0 0.0125" type="capsule" class="plastic_collision" friction="2.5"/>
                 <body name="rh_mfdistal" pos="0 0 0.025">
                   <inertial mass="0.013" pos="0 0 0.0130769" quat="1 0 0 1"
                     diaginertia="1.28092e-06 1.12092e-06 5.3e-07"/>
                   <joint name="rh_MFJ1" class="middle_distal"/>
                   <geom class="plastic_visual" mesh="f_distal_pst"/>
-                  <geom class="plastic_collision" type="mesh" mesh="f_distal_pst" friction="{fric}"/>
+                  <geom class="plastic_collision" type="mesh" mesh="f_distal_pst" friction="2.5"/>
                 </body>
               </body>
             </body>
@@ -209,23 +205,23 @@ XML = """
             <inertial mass="0.008" pos="0 0 0" quat="0.5 0.5 -0.5 0.5" diaginertia="3.2e-07 2.6e-07 2.6e-07"/>
             <joint name="rh_RFJ4" class="knuckle" axis="0 1 0"/>
             <geom pos="0 0 0.0005" class="plastic_visual" mesh="f_knuckle" material="metallic"/>
-            <geom size="0.009 0.009" quat="1 0 1 0" type="cylinder" class="plastic_collision" friction="{fric}"/>
+            <geom size="0.009 0.009" quat="1 0 1 0" type="cylinder" class="plastic_collision" friction="2.5"/>
             <body name="rh_rfproximal">
               <inertial mass="0.03" pos="0 0 0.0225" quat="1 0 0 1" diaginertia="1e-05 9.8e-06 1.8e-06"/>
               <joint name="rh_RFJ3" class="proximal"/>
               <geom class="plastic_visual" mesh="f_proximal"/>
-              <geom size="0.009 0.02" pos="0 0 0.025" type="capsule" class="plastic_collision" friction="{fric}"/>
+              <geom size="0.009 0.02" pos="0 0 0.025" type="capsule" class="plastic_collision" friction="2.5"/>
               <body name="rh_rfmiddle" pos="0 0 0.045">
                 <inertial mass="0.017" pos="0 0 0.0125" quat="1 0 0 1" diaginertia="2.7e-06 2.6e-06 8.7e-07"/>
                 <joint name="rh_RFJ2" class="middle_distal"/>
                 <geom class="plastic_visual" mesh="f_middle"/>
-                <geom size="0.009 0.0125" pos="0 0 0.0125" type="capsule" class="plastic_collision" friction="{fric}"/>
+                <geom size="0.009 0.0125" pos="0 0 0.0125" type="capsule" class="plastic_collision" friction="2.5"/>
                 <body name="rh_rfdistal" pos="0 0 0.025">
                   <inertial mass="0.013" pos="0 0 0.0130769" quat="1 0 0 1"
                     diaginertia="1.28092e-06 1.12092e-06 5.3e-07"/>
                   <joint name="rh_RFJ1" class="middle_distal"/>
                   <geom class="plastic_visual" mesh="f_distal_pst"/>
-                  <geom class="plastic_collision" type="mesh" mesh="f_distal_pst" friction="{fric}"/>
+                  <geom class="plastic_collision" type="mesh" mesh="f_distal_pst" friction="2.5"/>
                 </body>
               </body>
             </body>
@@ -234,28 +230,28 @@ XML = """
             <inertial mass="0.03" pos="0 0 0.04" quat="1 0 0 1" diaginertia="1.638e-05 1.45e-05 4.272e-06"/>
             <joint name="rh_LFJ5" class="metacarpal"/>
             <geom class="plastic_visual" mesh="lf_metacarpal"/>
-            <geom size="0.011 0.012 0.025" pos="0.002 0 0.033" type="box" class="plastic_collision" friction="{fric}"/>
+            <geom size="0.011 0.012 0.025" pos="0.002 0 0.033" type="box" class="plastic_collision" friction="2.5"/>
             <body name="rh_lfknuckle" pos="0 0 0.06579">
               <inertial mass="0.008" pos="0 0 0" quat="0.5 0.5 -0.5 0.5" diaginertia="3.2e-07 2.6e-07 2.6e-07"/>
               <joint name="rh_LFJ4" class="knuckle" axis="0 1 0"/>
               <geom pos="0 0 0.0005" class="plastic_visual" mesh="f_knuckle" material="metallic"/>
-              <geom size="0.009 0.009" quat="1 0 1 0" type="cylinder" class="plastic_collision" friction="{fric}"/>
+              <geom size="0.009 0.009" quat="1 0 1 0" type="cylinder" class="plastic_collision" friction="2.5"/>
               <body name="rh_lfproximal">
                 <inertial mass="0.03" pos="0 0 0.0225" quat="1 0 0 1" diaginertia="1e-05 9.8e-06 1.8e-06"/>
                 <joint name="rh_LFJ3" class="proximal"/>
                 <geom class="plastic_visual" mesh="f_proximal"/>
-                <geom size="0.009 0.02" pos="0 0 0.025" type="capsule" class="plastic_collision" friction="{fric}"/>
+                <geom size="0.009 0.02" pos="0 0 0.025" type="capsule" class="plastic_collision" friction="2.5"/>
                 <body name="rh_lfmiddle" pos="0 0 0.045">
                   <inertial mass="0.017" pos="0 0 0.0125" quat="1 0 0 1" diaginertia="2.7e-06 2.6e-06 8.7e-07"/>
                   <joint name="rh_LFJ2" class="middle_distal"/>
                   <geom class="plastic_visual" mesh="f_middle"/>
-                  <geom size="0.009 0.0125" pos="0 0 0.0125" type="capsule" class="plastic_collision" friction="{fric}"/>
+                  <geom size="0.009 0.0125" pos="0 0 0.0125" type="capsule" class="plastic_collision" friction="2.5"/>
                   <body name="rh_lfdistal" pos="0 0 0.025">
                     <inertial mass="0.013" pos="0 0 0.0130769" quat="1 0 0 1"
                       diaginertia="1.28092e-06 1.12092e-06 5.3e-07"/>
                     <joint name="rh_LFJ1" class="middle_distal"/>
                     <geom class="plastic_visual" mesh="f_distal_pst"/>
-                    <geom class="plastic_collision" type="mesh" mesh="f_distal_pst" friction="{fric}"/>
+                    <geom class="plastic_collision" type="mesh" mesh="f_distal_pst" friction="2.5"/>
                   </body>
                 </body>
               </body>
@@ -264,28 +260,28 @@ XML = """
           <body name="rh_thbase" pos="0.034 -0.00858 0.029" quat="0.92388 0 0.382683 0">
             <inertial mass="0.01" pos="0 0 0" diaginertia="1.6e-07 1.6e-07 1.6e-07"/>
             <joint name="rh_THJ5" class="thbase"/>
-            <geom class="plastic_collision" size="0.013" friction="{fric}"/>
+            <geom class="plastic_collision" size="0.013" friction="2.5"/>
             <body name="rh_thproximal">
               <inertial mass="0.04" pos="0 0 0.019" diaginertia="1.36e-05 1.36e-05 3.13e-06"/>
               <joint name="rh_THJ4" class="thproximal"/>
               <geom class="plastic_visual" mesh="th_proximal"/>
-              <geom class="plastic_collision" size="0.0105 0.009" pos="0 0 0.02" type="capsule" friction="{fric}"/>
+              <geom class="plastic_collision" size="0.0105 0.009" pos="0 0 0.02" type="capsule" friction="2.5"/>
               <body name="rh_thhub" pos="0 0 0.038">
                 <inertial mass="0.005" pos="0 0 0" diaginertia="1e-06 1e-06 3e-07"/>
                 <joint name="rh_THJ3" class="thhub"/>
-                <geom size="0.011" class="plastic_collision" friction="{fric}"/>
+                <geom size="0.011" class="plastic_collision" friction="2.5"/>
                 <body name="rh_thmiddle">
                   <inertial mass="0.02" pos="0 0 0.016" diaginertia="5.1e-06 5.1e-06 1.21e-06"/>
                   <joint name="rh_THJ2" class="thmiddle"/>
                   <geom class="plastic_visual" mesh="th_middle"/>
-                  <geom size="0.009 0.009" pos="0 0 0.012" type="capsule" class="plastic_collision" friction="{fric}"/>
-                  <geom size="0.01" pos="0 0 0.03" class="plastic_collision" friction="{fric}"/>
+                  <geom size="0.009 0.009" pos="0 0 0.012" type="capsule" class="plastic_collision" friction="2.5"/>
+                  <geom size="0.01" pos="0 0 0.03" class="plastic_collision" friction="2.5"/>
                   <body name="rh_thdistal" pos="0 0 0.032" quat="1 0 0 -1">
                     <inertial mass="0.017" pos="0 0 0.0145588" quat="1 0 0 1"
                       diaginertia="2.37794e-06 2.27794e-06 1e-06"/>
                     <joint name="rh_THJ1" class="thdistal"/>
                     <geom class="plastic_visual" mesh="th_distal_pst"/>
-                    <geom class="plastic_collision" type="mesh" mesh="th_distal_pst" friction="{fric}"/>
+                    <geom class="plastic_collision" type="mesh" mesh="th_distal_pst" friction="2.5"/>
                   </body>
                 </body>
               </body>
@@ -342,36 +338,10 @@ XML = """
     <weld body1="mocap" body2="rh_wrist"/>
   </equality>
 """
-RANGES = [
-    # TH
-    [-1.0472, 1.0472],
-    [0, 1.22173],
-    [-0.20944, 0.20944],
-    [-0.698132, 0.698132],
-    [-0.261799, 1.5708],
-    # FF
-    [-0.349066, 0.349066],
-    [-0.261799, 1.5708],
-    [0, 3.1415],
-    # MF
-    [-0.349066, 0.349066],
-    [-0.261799, 1.5708],
-    [0, 3.1415],
-    # RF
-    [-0.349066, 0.349066],
-    [-0.261799, 1.5708],
-    [0, 3.1415],
-    # LF
-    [0, 0.785398],
-    [-0.349066, 0.349066],
-    [-0.261799, 1.5708],
-    [0, 3.1415],
-]
 
 
 class GripperShadowRight(MjShakableOpenCloseGripper, MjScannable):
     def __init__(self, pose: SE3Pose, grasp_type=None):
-        self.surrogate = load_shadow_acc_to_qpos()
         super().__init__(pose, "rh_wrist")
 
     def to_xml(self) -> Tuple[str, Dict[str, Any]]:
@@ -383,7 +353,6 @@ class GripperShadowRight(MjShakableOpenCloseGripper, MjScannable):
             **{
                 "position": pos,
                 "quaternion": quat,
-                "fric": FRICTION,
             }
         )
 
@@ -406,136 +375,6 @@ class GripperShadowRight(MjShakableOpenCloseGripper, MjScannable):
         open_pose = np.zeros(shape=(22,))
         sim.set_qpos(open_pose, gripper_idxs)  # type: ignore
         sim.data.ctrl[:] = self._qpos_to_qacc(np.copy(open_pose))  # type: ignore
-
-    # Finger prefixes used for per-finger contact detection.
-    # Maps body-name prefixes to the set of body names belonging to that finger.
-    _FINGER_PREFIXES = ("rh_ff", "rh_mf", "rh_rf", "rh_lf", "rh_th")
-
-    def _get_finger_contacts(self, sim: MjSimulation) -> set:
-        """Return set of finger prefixes (e.g. {'rh_ff', 'rh_th'}) that are
-        currently in contact with the object.
-
-        Uses the same geom-ID ordering trick as check_contact_with_object():
-        gripper geoms have IDs < table_id, object geoms have IDs > table_id.
-        """
-        table_id = sim.model.geom("geom:ground").id
-        contacted = set()
-
-        for g1, g2 in sim.data.contact.geom:
-            # Identify gripper-object contact pairs
-            if g1 < table_id and g2 > table_id:
-                gripper_geom_id = g1
-            elif g2 < table_id and g1 > table_id:
-                gripper_geom_id = g2
-            else:
-                continue
-
-            # Walk up the body tree from the gripper geom to find which finger
-            body_id = sim.model.geom_bodyid[gripper_geom_id]
-            while body_id > 0:
-                body_name = mujoco.mj_id2name(
-                    sim.model, mujoco.mjtObj.mjOBJ_BODY, body_id
-                )
-                if body_name is not None:
-                    for prefix in self._FINGER_PREFIXES:
-                        if body_name.startswith(prefix):
-                            contacted.add(prefix)
-                            break
-                body_id = sim.model.body_parentid[body_id]
-
-        return contacted
-
-    def close_dip_pip(self, sim: MjSimulation, pose: SE3Pose, acc: np.ndarray):
-        """Incrementally close each finger's DIP/PIP tendon (and thumb IP)
-        independently until it contacts the object, then back off to a
-        collision-free configuration.
-
-        Fingers that never contact the object are reset to their original
-        acc value (controlled by RESET_NO_CONTACT_FINGERS below).
-        """
-        # ----------------------------------------------------------------
-        # CONFIG — toggle to keep or reset fingers that never made contact.
-        # Set False to keep the fully-closed position for non-contacting fingers.
-        RESET_NO_CONTACT_FINGERS = True
-        # ----------------------------------------------------------------
-
-        sim.data.mocap_pos = pose.pos
-        sim.data.mocap_quat = pose.quat
-
-        idx = sim.get_joint_idxs(self.get_actuator_joint_names())
-        ranges = np.array(RANGES)
-
-        # Finger acc indices → body prefix for contact detection
-        # FF0=7, MF0=10, RF0=13, LF0=17 are the coupled DIP/PIP tendons
-        # TH1=4 is the thumb IP joint
-        finger_acc = {
-            7: "rh_ff",
-            10: "rh_mf",
-            13: "rh_rf",
-            17: "rh_lf",
-            3: "rh_th_pip",
-            4: "rh_th_dip",
-        }
-
-        delta = 0.01
-        next_acc = acc.copy()
-        original_acc = acc.copy()
-        done = set()  # acc indices whose closing is finished
-        contacted = set()  # acc indices that made contact with the object
-
-        # --- Forward: increment each finger until contact or range limit ---
-        max_steps = int(np.pi / delta) + 10
-        with mujoco.viewer.launch_passive(sim.model, sim.data) as viewer:
-            for _ in range(max_steps):
-                if len(done) == len(finger_acc):
-                    break
-
-                for ai in finger_acc:
-                    if ai in done:
-                        continue
-                    next_acc[ai] += delta
-                    next_acc[ai] = np.clip(next_acc[ai], ranges[ai, 0], ranges[ai, 1])
-                    if next_acc[ai] >= ranges[ai, 1] - 1e-6:
-                        done.add(ai)
-
-                next_qpos = np.array(self.surrogate(next_acc))
-                sim.set_qpos(next_qpos, idx)
-                mujoco.mj_forward(sim.model, sim.data)
-                viewer.sync()
-
-                in_contact = self._get_finger_contacts(sim)
-                for ai, prefix in finger_acc.items():
-                    if ai not in done and prefix in in_contact:
-                        done.add(ai)
-                        contacted.add(ai)
-
-            # --- Reset non-contacting fingers to their original value ---
-            if RESET_NO_CONTACT_FINGERS:
-                for ai in finger_acc:
-                    if ai not in contacted:
-                        next_acc[ai] = original_acc[ai]
-
-            # --- Backtrack contacting fingers until collision-free ---
-            for ai in contacted:
-                prefix = finger_acc[ai]
-                for _ in range(10):
-                    next_acc[ai] -= delta
-                    next_acc[ai] = np.clip(next_acc[ai], ranges[ai, 0], ranges[ai, 1])
-
-                    next_qpos = np.array(self.surrogate(next_acc))
-                    sim.set_qpos(next_qpos, idx)
-                    mujoco.mj_forward(sim.model, sim.data)
-                    viewer.sync()
-
-                    if prefix not in self._get_finger_contacts(sim):
-                        break
-
-            # Final state
-            next_qpos = np.array(self.surrogate(next_acc))
-            sim.set_qpos(next_qpos, idx)
-            mujoco.mj_forward(sim.model, sim.data)
-            viewer.sync()
-        return next_acc
 
     def close_gripper_at(self, sim: MjSimulation, pose: SE3Pose):
         sim.data.mocap_pos = pose.pos
@@ -568,7 +407,8 @@ class GripperShadowRight(MjShakableOpenCloseGripper, MjScannable):
                 ]
             )
         )  # type: ignore
-        mujoco.mj_step(sim.model, sim.data, 250)  # type: ignore
+        for i in range(300):
+            mujoco.mj_step(sim.model, sim.data, 1)  # type: ignore
 
     def get_freejoint_idxs(self, sim: MjSimulation) -> List[int]:
         start_idx = sim.get_joint_idxs(["freejoint"])[0]

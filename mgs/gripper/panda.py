@@ -30,16 +30,6 @@ from .base import MjScannable, MjShakableOpenCloseGripper
 # (https://github.com/google-deepmind/mujoco_menagerie/tree/469893211c41d5da9c314f5ab58059fa17c8e360)
 # Copyright 2024 Franka Robotics License: Apache-2.0
 # cf. 3rd-party-licenses.txt file in the root directory of this source tree.
-
-DEFAULT_FRICTION = "0.8 0.05 0.005"
-DEFAULT_FORCE = "4"
-FORCE_ENV_KEY = "PANDA_FORCE"
-
-
-def get_panda_force() -> str:
-    return os.environ.get(FORCE_ENV_KEY, DEFAULT_FORCE)
-
-
 XML = """
   <default>
     <default class="panda">
@@ -53,19 +43,19 @@ XML = """
       <default class="collision">
         <geom type="mesh" group="3"/>
         <default class="fingertip_pad_collision_1">
-          <geom type="box" size="0.0085 0.004 0.0085" pos="0 0.0055 0.0445" friction="{fric}"/>
+          <geom type="box" size="0.0085 0.004 0.0085" pos="0 0.0055 0.0445" friction="1.5 0.3 0.1"/>
         </default>
         <default class="fingertip_pad_collision_2">
-          <geom type="box" size="0.003 0.002 0.003" pos="0.0055 0.002 0.05" friction="{fric}"/>
+          <geom type="box" size="0.003 0.002 0.003" pos="0.0055 0.002 0.05" friction="1.5 0.3 0.1"/>
         </default>
         <default class="fingertip_pad_collision_3">
-          <geom type="box" size="0.003 0.002 0.003" pos="-0.0055 0.002 0.05" friction="{fric}"/>
+          <geom type="box" size="0.003 0.002 0.003" pos="-0.0055 0.002 0.05" friction="1.5 0.3 0.1"/>
         </default>
         <default class="fingertip_pad_collision_4">
-          <geom type="box" size="0.003 0.002 0.0035" pos="0.0055 0.002 0.0395" friction="{fric}"/>
+          <geom type="box" size="0.003 0.002 0.0035" pos="0.0055 0.002 0.0395" friction="1.5 0.3 0.1"/>
         </default>
         <default class="fingertip_pad_collision_5">
-          <geom type="box" size="0.003 0.002 0.0035" pos="-0.0055 0.002 0.0395" friction="{fric}"/>
+          <geom type="box" size="0.003 0.002 0.0035" pos="-0.0055 0.002 0.0395" friction="1.5 0.3 0.1"/>
         </default>
       </default>
     </default>
@@ -145,8 +135,8 @@ XML = """
   </equality>
 
   <actuator>
-    <position ctrllimited="true" ctrlrange="0.0 0.04" joint="finger_joint1" kp="1000" name="gripper_finger_joint1" forcelimited="true" forcerange="-{force} {force}"/>
-    <position ctrllimited="true" ctrlrange="-0.04 0.0" joint="finger_joint2" kp="1000" name="gripper_finger_joint2" forcelimited="true" forcerange="-{force} {force}"/>
+    <position ctrllimited="true" ctrlrange="0.0 0.04" joint="finger_joint1" kp="1000" name="gripper_finger_joint1" forcelimited="true" forcerange="-15 15"/>
+    <position ctrllimited="true" ctrlrange="-0.04 0.0" joint="finger_joint2" kp="1000" name="gripper_finger_joint2" forcelimited="true" forcerange="-15 15"/>
   </actuator>
 """
 
@@ -173,11 +163,14 @@ class GripperPanda(MjShakableOpenCloseGripper, MjScannable):
         quat = "{} {} {} {}".format(
             self.quat[0], self.quat[1], self.quat[2], self.quat[3]
         )
-        force = get_panda_force()
-        print(f"Force: {force}")
-        formatted_xml = XML.format(
-            position=pos, quaternion=quat, fric=DEFAULT_FRICTION, force=force
-        )
+        # We need the XML string from the outer scope or defined here
+        # For now, assume it's accessible as `XML`
+        try:
+            formatted_xml = XML.format(position=pos, quaternion=quat)
+        except NameError:
+            raise RuntimeError(
+                "Panda XML template string 'XML' is not defined in the scope of GripperPanda.to_xml"
+            )
 
         ASSETS = dict()
         base_path = os.path.join(ASSET_PATH, "panda")
